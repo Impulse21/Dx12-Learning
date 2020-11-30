@@ -17,3 +17,4 @@ Tests a structure
 ## Depth Tests
 Tests drawing a two overlapping triangles.
 
+![Triangle Unit Tests](https://github.com/Impulse21/Dx12-Learning/blob/main/UnitTests/TriangleTest/Triangle.png)
