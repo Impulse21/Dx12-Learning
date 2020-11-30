@@ -12,6 +12,8 @@
 
 #include <DirectXMath.h>
 
+#include <math.h>       /* sin */
+
 namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
@@ -22,6 +24,13 @@ struct VertexPosColour
     XMFLOAT3 Position;
     XMFLOAT3 Colour;
 };
+
+__declspec(align(16)) struct TriangleOffsetCB
+{
+    XMFLOAT2 Offset;
+};
+
+static_assert((sizeof(TriangleOffsetCB) % (sizeof(float) * 4)) == 0, "Invalid struture size");
 
 static std::vector<VertexPosColour> gVertices =
 {
@@ -47,7 +56,7 @@ private:
 
 private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_emptyRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
 
     // Vertex buffer for the cube.
     Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
@@ -56,6 +65,8 @@ private:
     // Index buffer for the cube.
     Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBuffer;
     D3D12_INDEX_BUFFER_VIEW m_indexBufferView = {};
+
+    TriangleOffsetCB m_triangleCB = {};
 };
 
 CREATE_APPLICATION(TriangleTestApp)
@@ -68,6 +79,7 @@ void TriangleTestApp::LoadContent()
 {
     auto uploadCmdList = this->m_copyQueue->GetCommandList();
 
+    m_triangleCB.Offset = { 0.0f, 0.0f };
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadResource;
     this->UploadBufferResource(
@@ -104,6 +116,11 @@ void TriangleTestApp::LoadContent()
 
 void TriangleTestApp::Update(double deltaTime)
 {
+    static float updateTick = 0;
+    m_triangleCB.Offset.x = sin(updateTick * 3.14159265/ 180);
+    // m_triangleCB.Offset.y = sin(updateTick * 3.14159265 / 180);
+    updateTick += 0.1;
+   
 }
 
 void TriangleTestApp::Render()
@@ -133,8 +150,8 @@ void TriangleTestApp::Render()
     // Set Render Target
     commandList->OMSetRenderTargets(1, &rtv, false, nullptr);
 
-    commandList->SetGraphicsRootSignature(this->m_emptyRootSignature.Get());
-
+    commandList->SetGraphicsRootSignature(this->m_rootSignature.Get());
+    commandList->SetGraphicsRoot32BitConstants(0, sizeof(TriangleOffsetCB) / 4, &this->m_triangleCB, 0);
     commandList->SetPipelineState(this->m_pso.Get());
 
     commandList->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -165,8 +182,12 @@ void TriangleTestApp::CreatePipelineStateObjects()
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
     }
 
+    // A single 32-bit constant root parameter that is used by the vertex shader.
+    CD3DX12_ROOT_PARAMETER1 rootParameters[1] = {};
+    rootParameters[0].InitAsConstants(sizeof(TriangleOffsetCB) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-    rootSignatureDescription.Init_1_1(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    rootSignatureDescription.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     // Serialize the root signature.
     Microsoft::WRL::ComPtr<ID3DBlob> rootSignatureBlob;
@@ -184,7 +205,7 @@ void TriangleTestApp::CreatePipelineStateObjects()
             0,
             rootSignatureBlob->GetBufferPointer(),
             rootSignatureBlob->GetBufferSize(),
-            IID_PPV_ARGS(&this->m_emptyRootSignature)));
+            IID_PPV_ARGS(&this->m_rootSignature)));
 
 
     // Create the vertex input layout
@@ -195,7 +216,7 @@ void TriangleTestApp::CreatePipelineStateObjects()
 
     PipelineStateBuilder builder;
     builder.SetInputElementDesc(inputLayout);
-    builder.SetRootSignature(this->m_emptyRootSignature.Get());
+    builder.SetRootSignature(this->m_rootSignature.Get());
     std::string baseAssetPath(fs::current_path().u8string());
 
     std::vector<char> vertexByteData;
