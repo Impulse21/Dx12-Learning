@@ -1,0 +1,6 @@
+[submodule "ThridParty/imgui"]
+	path = ThridParty/imgui
+	url = https://github.com/Impulse21/imgui.git
+[submodule "ThridParty/glfw"]
+	path = ThridParty/glfw
+	url = https://github.com/Impulse21/glfw
