@@ -33,7 +33,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> Core::PipelineStateBuilder::Build(ID
     return pipelineStateObject;
 }
 
-void Core::PipelineStateBuilder::AddInputElement(std::vector<D3D12_INPUT_ELEMENT_DESC> inputElementDescs)
+void Core::PipelineStateBuilder::SetInputElementDesc(std::vector<D3D12_INPUT_ELEMENT_DESC> const& inputElementDescs)
 {
     D3D12_INPUT_LAYOUT_DESC inputDesc = {};
     inputDesc.NumElements = inputElementDescs.size();

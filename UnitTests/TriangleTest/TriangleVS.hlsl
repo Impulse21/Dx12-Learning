@@ -1,6 +1,7 @@
 struct VSInput
 {
-    uint vertexId : SV_VertexID;
+    float2 position : POSITION;
+    float3 colour : COLOUR;
 };
 
 struct VSOutput
@@ -9,19 +10,15 @@ struct VSOutput
     float4 position : SV_Position;
 };
 
-static float2 triangleVerts[3] =
-{
-    float2(0.0f, -0.5f),
-    float2(-0.5, 0.5),
-    float2(0.5, 0.5)
-};
+
 
 VSOutput main(VSInput input)
 {
     VSOutput output;
-    output.position = float4(triangleVerts[input.vertexId], 0.0f, 1.0f);
     
-    output.colour = float4(1.0f, 0.0f, 0.0f, 1.0f);
+    output.position = float4(input.position, 0.0f, 1.0f);
+    
+    output.colour = float4(input.colour, 1.0f);
     
     return output;
 }

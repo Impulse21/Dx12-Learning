@@ -49,6 +49,51 @@ void Core::Dx12Application::RunApplication()
 	this->Shutdown();
 }
 
+void Core::Dx12Application::UploadBufferResource(
+	ID3D12GraphicsCommandList2* commandList,
+	ID3D12Resource** pDestinationResource,
+	ID3D12Resource** pIntermediateResource,
+	size_t numOfElements,
+	size_t elementStride,
+	const void* data,
+	D3D12_RESOURCE_FLAGS flags)
+{
+	size_t bufferSize = numOfElements * elementStride;
+
+	// Create a committed resource for the GPU resource in a default heap.
+	ThrowIfFailed(
+		this->m_d3d12Device->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+			D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(bufferSize, flags),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			nullptr,
+			IID_PPV_ARGS(pDestinationResource)));
+
+	// Create an committed resource for the upload.
+	if (data)
+	{
+		ThrowIfFailed(
+			this->m_d3d12Device->CreateCommittedResource(
+				&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+				D3D12_HEAP_FLAG_NONE,
+				&CD3DX12_RESOURCE_DESC::Buffer(bufferSize),
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				nullptr,
+				IID_PPV_ARGS(pIntermediateResource)));
+
+		D3D12_SUBRESOURCE_DATA subresourceData = {};
+		subresourceData.pData = data;
+		subresourceData.RowPitch = bufferSize;
+		subresourceData.SlicePitch = subresourceData.RowPitch;
+
+		UpdateSubresources(
+			commandList,
+			*pDestinationResource, *pIntermediateResource,
+			0, 0, 1, &subresourceData);
+	}
+}
+
 void Core::Dx12Application::Ininitialize()
 {
 	this->m_window = IWindow::Create();

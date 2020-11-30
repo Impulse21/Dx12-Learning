@@ -14,7 +14,7 @@ namespace Core
 
 		void SetRootSignature(ID3D12RootSignature* rootSignature) { this->m_psoDesc.pRootSignature = rootSignature; }
 
-		void AddInputElement(std::vector<D3D12_INPUT_ELEMENT_DESC> inputElementDescs);
+		void SetInputElementDesc(std::vector<D3D12_INPUT_ELEMENT_DESC> const& inputElementDescs);
 
 		void SetVertexShader(std::vector<char> const& bytecode);
 		void SetPixelShader(std::vector<char> const& bytecode);

@@ -45,6 +45,17 @@ namespace Core
 			this->m_frameFences[this->m_swapChain->GetCurrentBufferIndex()] = fenceValue;
 		}
 
+		// -- Potential Render Device functions ---
+	protected:
+		void UploadBufferResource(
+			ID3D12GraphicsCommandList2* commandList,
+			ID3D12Resource** pDestinationResource,
+			ID3D12Resource** pIntermediateResource,
+			size_t numOfElements,
+			size_t elementStride,
+			const void* data,
+			D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+
 	private:
 		void Ininitialize();
 		void Shutdown();

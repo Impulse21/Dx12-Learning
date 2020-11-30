@@ -10,10 +10,27 @@
 
 #include "pch.h"
 
+#include <DirectXMath.h>
+
 namespace fs = std::filesystem;
-
-
 using namespace Core;
+using namespace DirectX;
+
+
+struct VertexPosColour
+{
+    XMFLOAT3 Position;
+    XMFLOAT3 Colour;
+};
+
+static std::vector<VertexPosColour> gVertices =
+{
+    { XMFLOAT3(0.0f, -0.5f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+    { XMFLOAT3(-0.5f, 0.5f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+    { XMFLOAT3(0.5f, 0.5f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }
+};
+
+static std::vector<uint16_t> gIndices = { 0, 1, 2 };
 
 class TriangleTestApp : public Dx12Application
 {
@@ -26,8 +43,19 @@ protected:
     void Render() override;
 
 private:
+    void CreatePipelineStateObjects();
+
+private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_emptyRootSignature;
+
+    // Vertex buffer for the cube.
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
+    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView = {};
+
+    // Index buffer for the cube.
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBuffer;
+    D3D12_INDEX_BUFFER_VIEW m_indexBufferView = {};
 };
 
 CREATE_APPLICATION(TriangleTestApp)
@@ -37,6 +65,97 @@ TriangleTestApp::TriangleTestApp()
 }
 
 void TriangleTestApp::LoadContent()
+{
+    auto uploadCmdList = this->m_copyQueue->GetCommandList();
+
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadResource;
+    this->UploadBufferResource(
+        uploadCmdList.Get(),
+        &this->m_vertexBuffer,
+        &vertexUploadResource,
+        gVertices.size(),
+        sizeof(VertexPosColour),
+        gVertices.data());
+
+    this->m_vertexBufferView.BufferLocation = this->m_vertexBuffer->GetGPUVirtualAddress();
+    this->m_vertexBufferView.StrideInBytes = sizeof(VertexPosColour);
+    this->m_vertexBufferView.SizeInBytes = sizeof(VertexPosColour) * gVertices.size();
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadResource;
+    this->UploadBufferResource(
+        uploadCmdList.Get(),
+        &this->m_indexBuffer,
+        &indexUploadResource,
+        gIndices.size(),
+        sizeof(uint16_t),
+        gIndices.data());
+
+    this->m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+    this->m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    this->m_indexBufferView.SizeInBytes = sizeof(uint16_t) * gIndices.size();
+
+    uint64_t uploadFence = this->m_copyQueue->ExecuteCommandList(uploadCmdList);
+
+    this->CreatePipelineStateObjects();
+
+    this->m_copyQueue->WaitForFenceValue(uploadFence);
+}
+
+void TriangleTestApp::Update(double deltaTime)
+{
+}
+
+void TriangleTestApp::Render()
+{
+    auto commandList = this->m_directQueue->GetCommandList();
+    auto currentBackBuffer = this->m_swapChain->GetCurrentBackBuffer();
+    auto rtv = this->m_rtvDescriptorHeap->GetCpuHandle(this->m_swapChain->GetCurrentBufferIndex());
+
+    // Clear the render targets.
+    {
+        CommandListHelpers::TransitionResource(
+            commandList,
+            currentBackBuffer,
+            D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+
+        CommandListHelpers::ClearRenderTarget(commandList, rtv, { 0.4f, 0.6f, 0.9f, 1.0f });
+        // ClearDepth(commandList, dsv);
+    }
+
+    static CD3DX12_VIEWPORT viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, this->m_window->GetWidth(), this->m_window->GetHeight());
+    commandList->RSSetViewports(1, &viewport);
+
+    static CD3DX12_RECT rect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
+    commandList->RSSetScissorRects(1, &rect);
+
+    // Set Render Target
+    commandList->OMSetRenderTargets(1, &rtv, false, nullptr);
+
+    commandList->SetGraphicsRootSignature(this->m_emptyRootSignature.Get());
+
+    commandList->SetPipelineState(this->m_pso.Get());
+
+    commandList->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->IASetVertexBuffers(0, 1, &this->m_vertexBufferView);
+    commandList->IASetIndexBuffer(&this->m_indexBufferView);
+
+    commandList->DrawIndexedInstanced(gIndices.size(), 1, 0, 0, 0);
+
+    // Prepare Render target for present
+    {
+        CommandListHelpers::TransitionResource(
+            commandList,
+            currentBackBuffer,
+            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+
+        uint64_t commandFence = this->m_directQueue->ExecuteCommandList(commandList);
+        this->SetCurrentFrameFence(commandFence);
+    }
+}
+
+void TriangleTestApp::CreatePipelineStateObjects()
 {
     // -- Create Root Signature ---
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
@@ -68,9 +187,15 @@ void TriangleTestApp::LoadContent()
             IID_PPV_ARGS(&this->m_emptyRootSignature)));
 
 
-    PipelineStateBuilder builder;
+    // Create the vertex input layout
+    std::vector<D3D12_INPUT_ELEMENT_DESC> inputLayout = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "COLOUR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
 
-    builder.SetRootSignature(m_emptyRootSignature.Get());
+    PipelineStateBuilder builder;
+    builder.SetInputElementDesc(inputLayout);
+    builder.SetRootSignature(this->m_emptyRootSignature.Get());
     std::string baseAssetPath(fs::current_path().u8string());
 
     std::vector<char> vertexByteData;
@@ -89,53 +214,4 @@ void TriangleTestApp::LoadContent()
 
 
     this->m_pso = builder.Build(this->m_d3d12Device.Get(), L"Pipeline state");
-}
-
-void TriangleTestApp::Update(double deltaTime)
-{
-}
-
-void TriangleTestApp::Render()
-{
-    auto commandList = this->m_directQueue->GetCommandList();
-    auto currentBackBuffer = this->m_swapChain->GetCurrentBackBuffer();
-    auto rtv = this->m_rtvDescriptorHeap->GetCpuHandle(this->m_swapChain->GetCurrentBufferIndex());
-
-    // Clear the render targets.
-    {
-        CommandListHelpers::TransitionResource(
-            commandList,
-            currentBackBuffer,
-            D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-
-        CommandListHelpers::ClearRenderTarget(commandList, rtv, { 0.4f, 0.6f, 0.9f, 1.0f });
-        // ClearDepth(commandList, dsv);
-    }
-
-    commandList->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    static CD3DX12_VIEWPORT viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, this->m_window->GetWidth(), this->m_window->GetHeight());
-    commandList->RSSetViewports(1, &viewport);
-
-    static CD3DX12_RECT rect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    commandList->RSSetScissorRects(1, &rect);
-
-    // Set Render Target
-    commandList->OMSetRenderTargets(1, &rtv, false, nullptr);
-
-    commandList->SetPipelineState(this->m_pso.Get());
-
-    commandList->DrawInstanced(3, 1, 0, 0);
-
-    // Prepare Render target for present
-    {
-        CommandListHelpers::TransitionResource(
-            commandList,
-            currentBackBuffer,
-            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-
-        uint64_t commandFence = this->m_directQueue->ExecuteCommandList(commandList);
-        this->SetCurrentFrameFence(commandFence);
-    }
 }
