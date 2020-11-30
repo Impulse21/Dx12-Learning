@@ -110,3 +110,31 @@ group "UnitTests"
 			"dxgi.lib",
 			"dxguid.lib",
 		}
+
+	project "ConstantBufferTest"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+		
+		files
+		{
+			"UnitTests/ConstantBufferTest/**.h",
+			"UnitTests/ConstantBufferTest/**.cpp",
+		}
+
+		includedirs
+		{
+			"UnitTests/ConstantBufferTest",
+			"Core",
+			
+			"ThridParty/spdlog/include",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}

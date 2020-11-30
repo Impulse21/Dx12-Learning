@@ -25,12 +25,12 @@ struct VertexPosColour
 
 static std::vector<VertexPosColour> gVertices =
 {
-    { XMFLOAT3(0.0f, 0.5f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-    { XMFLOAT3(-0.5f, -0.5f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-    { XMFLOAT3(0.5f, -0.5f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }
+    { XMFLOAT3(0.0f, -0.5f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+    { XMFLOAT3(-0.5f, 0.5f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+    { XMFLOAT3(0.5f, 0.5f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }
 };
 
-static std::vector<uint16_t> gIndices = { 0, 2, 1 };
+static std::vector<uint16_t> gIndices = { 0, 1, 2 };
 
 class TriangleTestApp : public Dx12Application
 {
