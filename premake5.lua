@@ -138,3 +138,51 @@ group "UnitTests"
 			"dxgi.lib",
 			"dxguid.lib",
 		}
+
+	project "StructuredBufferTest"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+		
+		files
+		{
+			"UnitTests/StructuredBufferTest/**.h",
+			"UnitTests/StructuredBufferTest/**.cpp",
+		}
+
+		includedirs
+		{
+			"UnitTests/StructuredBufferTest",
+			"Core",
+			
+			"ThridParty/spdlog/include",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
+
+	-- TODO
+	-- Structured Buffer FromComput Shader
+	-- Depth Test
+	-- Model Loading
+	-- SkyBox?
+	-- Root Constants
+	-- IMGUI
+	-- Dynamic Upload Buffer
+	-- Volatile Constant Buffer
+	-- BEZIER Plane
+
+	-- Techniques
+	-- BRDF
+	-- Shadow Map
+	-- Deffered Shading
+	-- Forward Plus Rendering
+	-- OMNI Direction Shader map
+	-- IBL
+	-- Multiplue point shader maps

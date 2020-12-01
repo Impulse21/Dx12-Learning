@@ -5,12 +5,15 @@ struct TriangleOffset
     float2 _padding;
 };
 
-ConstantBuffer<TriangleOffset> TriangleOffsetCB : register(b0);
+
+StructuredBuffer<TriangleOffset> TriangleOffsetSB : register(t0);
+
 
 struct VSInput
 {
     float2 position : POSITION;
-    float3 colour : COLOUR;
+    float3 colour   : COLOUR;
+    uint instanceID : SV_InstanceID;
 };
 
 struct VSOutput
@@ -24,8 +27,7 @@ VSOutput main(VSInput input)
 {
     VSOutput output;
     
-    // Apply Offset
-    float2 position = input.position + TriangleOffsetCB.offet;
+    float2 position = input.position + TriangleOffsetSB[input.instanceID].offet;
     output.position = float4(position, 0.0f, 1.0f);
     
     output.colour = float4(input.colour, 1.0f);
