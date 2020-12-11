@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "Application.h"
 
+#include "Dx12/ResourceStateTracker.h"
+
 Core::Dx12Application::~Dx12Application()
 {
 	this->m_dsvDescriptorHeap.reset();
@@ -289,6 +291,8 @@ void Core::Dx12Application::CreateSwapChain(Microsoft::WRL::ComPtr<IDXGIFactory6
 
 		auto rtvHandle = this->m_rtvDescriptorHeap->GetCpuHandle(i);
 		this->m_d3d12Device->CreateRenderTargetView(backBuffer.Get(), nullptr, rtvHandle);
+
+		ResourceStateTracker::AddGlobalResourceState(backBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
 
 		backBuffers[i] = backBuffer;
 	}

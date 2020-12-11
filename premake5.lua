@@ -167,6 +167,35 @@ group "UnitTests"
 			"dxguid.lib",
 		}
 
+
+	project "TexturedTriangleTest"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+		
+		files
+		{
+			"UnitTests/TexturedTriangleTest/**.h",
+			"UnitTests/TexturedTriangleTest/**.cpp",
+		}
+
+		includedirs
+		{
+			"UnitTests/TexturedTriangleTest",
+			"Core",
+			
+			"ThridParty/spdlog/include",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
+
 	-- TODO
 	-- Structured Buffer FromComput Shader
 	-- Depth Test

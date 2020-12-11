@@ -3,13 +3,18 @@
 #include <d3d12.h>  // For ID3D12CommandQueue, ID3D12Device2, and ID3D12Fence
 #include <wrl.h>    // For Microsoft::WRL::ComPtr
 
-#include <cstdint>  // For uint64_t
 #include <queue>    // For std::queue
 
+#include <thread>
+#include <condition_variable>
+
 #include "CommandAllocatorPool.h"
+#include "ThreadSafePool.h"
 
 namespace Core
 {
+	class CommandList;
+
 	// TODO: Should be non copyable
 	class CommandQueue
 	{
@@ -21,7 +26,9 @@ namespace Core
 		~CommandQueue();
 
 		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> GetCommandList();
-	
+		
+		std::shared_ptr<CommandList> GetCommandList2();
+
 		/// <summary>
 		/// Executes a command list
 		/// </summary>
@@ -29,7 +36,9 @@ namespace Core
 		/// <returns>Fence value for CPU to wait on.</returns>
 		uint64_t ExecuteCommandList(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commnadList);
 
+		uint64_t ExecuteCommandList(std::shared_ptr<CommandList> commandList);
 		uint64_t Signal();
+
 
 		bool IsFenceComplete(uint64_t fenceValue) { return this->m_fence->GetCompletedValue() >= fenceValue; };
 		void WaitForFenceValue(uint64_t fenceValue);
@@ -47,6 +56,8 @@ namespace Core
 		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> CreateCommandList(
 			ID3D12CommandAllocator* commandAllocator);
 
+	private:
+		void ProccessInFlightCommandLists();
 
 	private:
 		const D3D12_COMMAND_LIST_TYPE m_type;
@@ -55,11 +66,23 @@ namespace Core
 		Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_commandQueue;
 
 		Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
-		HANDLE m_fenceEvent;
-		uint64_t m_fenceValue;
+		
 
 		std::queue<Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>> m_commandListQueue;
 		CommandAllocatorPool m_commandAllocatorPool;
+
+		// new stuff
+
+		std::atomic_uint64_t m_fenceValue;
+
+		using CommandListEntry = std::tuple<uint64_t, std::shared_ptr<CommandList>>;
+		ThreadSafePool<CommandListEntry> m_inflightCommandLists;
+		ThreadSafePool<std::shared_ptr<CommandList>> m_availableCommandList;
+
+		std::thread m_processInflightCommnadListsThread;
+		std::atomic_bool m_bProcessInflightCommandLists;
+		std::mutex m_processInFlightCommandListsThreadMutex;
+		std::condition_variable m_processInflightCommandListThreadCv;
 	};
 }
 

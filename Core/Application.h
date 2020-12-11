@@ -20,6 +20,7 @@
 #include "Dx12/CommandQueue.h"
 #include "Dx12/SwapChain.h"
 #include "Dx12/PipelineStateBuilder.h"
+#include "Dx12/CommandList.h"
 
 // -- STL ---
 #include <memory>
@@ -93,6 +94,7 @@ namespace Core
 
 		// -- Frame resources ---
 		std::vector<uint64_t> m_frameFences;
+
 	};
 }
 

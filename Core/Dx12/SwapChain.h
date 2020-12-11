@@ -21,9 +21,9 @@ namespace Core
 		void Present();
 
 		int GetCurrentBufferIndex() const { return this->m_currBufferIndex; }
-		ID3D12Resource* GetCurrentBackBuffer() 
+		Microsoft::WRL::ComPtr<ID3D12Resource> GetCurrentBackBuffer()
 		{ 
-			return this->m_backBuffers[this->GetCurrentBufferIndex()].Get();
+			return this->m_backBuffers[this->GetCurrentBufferIndex()];
 		}
 
 		DXGI_FORMAT GetFormat() const { return this->Format; }
