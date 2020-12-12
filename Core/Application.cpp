@@ -294,6 +294,8 @@ void Core::Dx12Application::CreateSwapChain(Microsoft::WRL::ComPtr<IDXGIFactory6
 
 		ResourceStateTracker::AddGlobalResourceState(backBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
 
+		std::wstring name = std::wstring(L"Back Buffer ") + std::to_wstring(i);
+		backBuffer->SetName(name.c_str());
 		backBuffers[i] = backBuffer;
 	}
 

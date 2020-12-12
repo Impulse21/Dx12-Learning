@@ -24,17 +24,8 @@ namespace Core
 			D3D12_COMMAND_LIST_TYPE type);
 
 		~CommandQueue();
-
-		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> GetCommandList();
 		
-		std::shared_ptr<CommandList> GetCommandList2();
-
-		/// <summary>
-		/// Executes a command list
-		/// </summary>
-		/// <param name="commnadList"></param>
-		/// <returns>Fence value for CPU to wait on.</returns>
-		uint64_t ExecuteCommandList(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commnadList);
+		std::shared_ptr<CommandList> GetCommandList();
 
 		uint64_t ExecuteCommandList(std::shared_ptr<CommandList> commandList);
 		uint64_t Signal();
@@ -64,11 +55,8 @@ namespace Core
 
 		Microsoft::WRL::ComPtr<ID3D12Device2> m_device;
 		Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_commandQueue;
-
 		Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
-		
 
-		std::queue<Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>> m_commandListQueue;
 		CommandAllocatorPool m_commandAllocatorPool;
 
 		// new stuff

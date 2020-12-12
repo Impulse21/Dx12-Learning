@@ -34,13 +34,13 @@ CommandQueue::CommandQueue(
 	switch (type)
 	{
 	case D3D12_COMMAND_LIST_SUPPORT_FLAG_DIRECT:
-		this->m_commandQueue->SetName(L"Direct Command Qeueu");
+		this->m_commandQueue->SetName(L"Direct Command Queue");
 		break;
 	case D3D12_COMMAND_LIST_SUPPORT_FLAG_COPY:
-		this->m_commandQueue->SetName(L"Copy Command Qeueu");
+		this->m_commandQueue->SetName(L"Copy Command Queue");
 		break;
 	case D3D12_COMMAND_LIST_SUPPORT_FLAG_COMPUTE:
-		this->m_commandQueue->SetName(L"Compute Command Qeueu");
+		this->m_commandQueue->SetName(L"Compute Command Queue");
 		break;
 
 	}
@@ -55,34 +55,7 @@ CommandQueue::~CommandQueue()
 	this->m_processInflightCommnadListsThread.join();
 }
 
-Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> Core::CommandQueue::GetCommandList()
-{
-	ID3D12CommandAllocator* commandAllocator =  this->RequestAllocator();
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList;
-
-	if (!this->m_commandListQueue.empty())
-	{
-		commandList = this->m_commandListQueue.front();
-		this->m_commandListQueue.pop();
-
-		ThrowIfFailed(
-			commandList->Reset(commandAllocator, nullptr));
-	}
-	else
-	{
-		commandList = this->CreateCommandList(commandAllocator);
-	}
-
-
-	// Associate the command allocator with the command list so that it can be
-	// retrieved when the command list is executed.
-	ThrowIfFailed(
-		commandList->SetPrivateDataInterface(__uuidof(ID3D12CommandAllocator), commandAllocator));
-
-	return commandList;
-}
-
-std::shared_ptr<CommandList> Core::CommandQueue::GetCommandList2()
+std::shared_ptr<CommandList> Core::CommandQueue::GetCommandList()
 {
 	std::shared_ptr<CommandList> commandList;
 
@@ -103,31 +76,6 @@ std::shared_ptr<CommandList> Core::CommandQueue::GetCommandList2()
 	return commandList;
 }
 
-uint64_t CommandQueue::ExecuteCommandList(
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList)
-{
-	commandList->Close();
-
-
-	ID3D12CommandAllocator* commandAllocator;
-	UINT dataSize = sizeof(commandAllocator);
-	ThrowIfFailed(
-		commandList->GetPrivateData(__uuidof(ID3D12CommandAllocator), &dataSize, &commandAllocator));
-
-	ID3D12CommandList* const ppCommandLists[] = 
-	{
-		commandList.Get()
-	};
-
-	this->m_commandQueue->ExecuteCommandLists(1, ppCommandLists);
-	uint64_t fenceValue = this->Signal();
-
-	this->m_commandAllocatorPool.DiscardAllocator(fenceValue, commandAllocator);
-	this->m_commandListQueue.push(commandList);
-
-	return fenceValue;
-}
-
 uint64_t Core::CommandQueue::ExecuteCommandList(std::shared_ptr<CommandList> commandList)
 {
 	ResourceStateTracker::Lock();
@@ -140,7 +88,7 @@ uint64_t Core::CommandQueue::ExecuteCommandList(std::shared_ptr<CommandList> com
 	std::vector<ID3D12CommandList*> d3d12CommandLists;
 	d3d12CommandLists.reserve(1 * 2); // 2x since each command list will have a pending command list.
 
-	auto pendingCommandList = this->GetCommandList2();
+	auto pendingCommandList = this->GetCommandList();
 
 	bool hasPendingBarrieris = commandList->Close(*pendingCommandList);
 
@@ -215,7 +163,7 @@ void CommandQueue::Flush()
 		lock, 
 		[this] { return this->m_inflightCommandLists.Empty(); });
 
-	this->WaitForFenceValue(this->m_fenceValue);
+	this->WaitForFenceValue(this->Signal());
 }
 
 Microsoft::WRL::ComPtr<ID3D12CommandAllocator> CommandQueue::CreateCommandAllocator()

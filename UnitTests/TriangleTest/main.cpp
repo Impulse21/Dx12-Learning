@@ -66,7 +66,7 @@ TriangleTestApp::TriangleTestApp()
 
 void TriangleTestApp::LoadContent()
 {
-    auto uploadCmdList = this->m_copyQueue->GetCommandList2();
+    auto uploadCmdList = this->m_copyQueue->GetCommandList();
 
     uploadCmdList->CopyBuffer(
         this->m_vertexBuffer,
@@ -103,10 +103,9 @@ void TriangleTestApp::Update(double deltaTime)
 
 void TriangleTestApp::Render()
 {
-    auto commandList = this->m_directQueue->GetCommandList2();
+    auto commandList = this->m_directQueue->GetCommandList();
     auto currentBackBuffer = this->m_swapChain->GetCurrentBackBuffer();
     auto rtv = this->m_rtvDescriptorHeap->GetCpuHandle(this->m_swapChain->GetCurrentBufferIndex());
-
 
     commandList->ClearRenderTarget(currentBackBuffer, rtv, { 0.4f, 0.6f, 0.9f, 1.0f });
 

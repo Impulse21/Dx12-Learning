@@ -55,6 +55,19 @@ namespace Core
 			Microsoft::WRL::ComPtr<ID3D12Resource> resource,
 			D3D12_CPU_DESCRIPTOR_HANDLE& rtv);
 
+		/**
+		 * Set a set of 32-bit constants on the graphics pipeline.
+		 */
+		void SetGraphics32BitConstants(uint32_t rootParameterIndex, uint32_t numConstants, const void* constants);
+		template<typename T>
+		void SetGraphics32BitConstants(uint32_t rootParameterIndex, const T& constants)
+		{
+			static_assert(sizeof(T) % sizeof(uint32_t) == 0, "Size of type must be a multiple of 4 bytes");
+			this->SetGraphics32BitConstants(rootParameterIndex, sizeof(T) / sizeof(uint32_t), &constants);
+		}
+
+		void SetGraphicsRootShaderResourceView(uint32_t rootParameterIndex, Microsoft::WRL::ComPtr<ID3D12Resource> resource);
+
 		void SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 		void SetPipelineState(Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState);
 

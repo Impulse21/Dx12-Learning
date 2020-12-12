@@ -173,6 +173,19 @@ void Core::CommandList::SetRenderTarget(Microsoft::WRL::ComPtr<ID3D12Resource> r
 	TrackResource(resource);
 }
 
+void Core::CommandList::SetGraphics32BitConstants(uint32_t rootParameterIndex, uint32_t numConstants, const void* constants)
+{
+	this->m_commandList->SetGraphicsRoot32BitConstants(rootParameterIndex, numConstants, constants, 0);
+}
+
+void Core::CommandList::SetGraphicsRootShaderResourceView(
+	uint32_t rootParameterIndex,
+	Microsoft::WRL::ComPtr<ID3D12Resource> resource)
+{
+	this->m_commandList->SetGraphicsRootShaderResourceView(0, resource->GetGPUVirtualAddress());
+	this->TrackResource(resource);
+}
+
 void Core::CommandList::SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
 {
 	this->m_commandList->SetGraphicsRootSignature(rootSignature.Get());
