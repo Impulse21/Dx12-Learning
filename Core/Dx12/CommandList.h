@@ -6,6 +6,9 @@
 
 #include "d3dx12.h"
 
+#include "Dx12/DynamicDescriptorHeap.h"
+#include "Dx12/UploadBuffer.h"
+
 namespace Core
 {
 	class ResourceStateTracker;
@@ -83,19 +86,28 @@ namespace Core
 			int32_t baseVertex = 0,
 			uint32_t startInstance = 0);
 
-	private:
-		void TrackResource(Microsoft::WRL::ComPtr<ID3D12Object> object);
+		void SetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, ID3D12DescriptorHeap* heap);
 
 	private:
+		void TrackResource(Microsoft::WRL::ComPtr<ID3D12Object> object);
+		void BindDescriptorHeaps();
+
+	private:
+		Microsoft::WRL::ComPtr<ID3D12Device2> m_d3d12Device;
+
+		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> m_commandList;
+		ID3D12CommandAllocator* m_allocator;
+
 		using TrackedObjects = std::vector<Microsoft::WRL::ComPtr<ID3D12Object>>;
 		TrackedObjects m_trackedObjects;
 
 		std::unique_ptr<ResourceStateTracker> m_resourceStateTracker;
+		std::unique_ptr<UploadBuffer> m_uploadBuffer;
 
-		Microsoft::WRL::ComPtr<ID3D12Device2> m_d3d12Device;
-		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> m_commandList;
-		ID3D12CommandAllocator* m_allocator;
+		std::unique_ptr<DynamicDescriptorHeap> m_dynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 
-		// Store Command Allocator
+		// Keep track of the currently bound descriptor heaps. Only change descriptor 
+		// heaps if they are different than the currently bound descriptor heaps.
+		ID3D12DescriptorHeap* m_descriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 	};
 }

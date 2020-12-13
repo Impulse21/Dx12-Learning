@@ -95,6 +95,7 @@ namespace Core
 		// -- Frame resources ---
 		std::vector<uint64_t> m_frameFences;
 
+		uint64_t m_frameCount = 0;
 	};
 }
 

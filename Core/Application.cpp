@@ -24,6 +24,7 @@ void Core::Dx12Application::RunApplication()
 
 	while (!this->m_window->IsClosing())
 	{
+		this->m_frameCount++;
 		frameCounter++;
 		auto t1 = clock.now();
 		auto deltaTime = t1 - t0;

@@ -4,6 +4,8 @@
 #include "d3dx12.h"
 
 #include "ResourceStateTracker.h"
+#include "UploadBuffer.h"
+#include "DynamicDescriptorHeap.h"
 
 Core::CommandList::CommandList(
 	Microsoft::WRL::ComPtr<ID3D12Device2> device,
@@ -13,7 +15,17 @@ Core::CommandList::CommandList(
 	, m_commandList(commandList)
 	, m_allocator(allocator)
 	, m_resourceStateTracker(std::make_unique<ResourceStateTracker>())
+	, m_uploadBuffer(std::make_unique<UploadBuffer>(this->m_d3d12Device))
 {
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i] =
+			std::make_unique<DynamicDescriptorHeap>(
+				static_cast<D3D12_DESCRIPTOR_HEAP_TYPE>(i),
+				this->m_d3d12Device);
+
+		this->m_descriptorHeaps[i] = nullptr;
+	}
 }
 
 void Core::CommandList::Reset()
@@ -24,7 +36,15 @@ void Core::CommandList::Reset()
 		this->m_commandList->Reset(this->m_allocator, nullptr));
 
 	this->m_resourceStateTracker->Reset();
+	this->m_uploadBuffer->Reset();
 	this->m_trackedObjects.clear();
+
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i]->Reset();
+		this->m_descriptorHeaps[i] = nullptr;
+	}
+
 }
 
 bool Core::CommandList::Close(CommandList& pendingCommandList)
@@ -240,9 +260,37 @@ void Core::CommandList::DrawIndexed(
 	this->m_commandList->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, startInstance);
 }
 
+void Core::CommandList::SetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, ID3D12DescriptorHeap* heap)
+{
+	if (this->m_descriptorHeaps[heapType] == heap)
+	{
+		return;
+	}
+
+	this->m_descriptorHeaps[heapType] = heap;
+	this->BindDescriptorHeaps();
+}
+
 void Core::CommandList::TrackResource(Microsoft::WRL::ComPtr<ID3D12Object> object)
 {
 	this->m_trackedObjects.push_back(object);
+}
+
+void Core::CommandList::BindDescriptorHeaps()
+{
+	uint32_t numDescriptorHeaps = 0;
+	ID3D12DescriptorHeap* descriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
+
+	for (uint32_t i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i++)
+	{
+		ID3D12DescriptorHeap* descriptorHeap = this->m_descriptorHeaps[i];
+		if (descriptorHeap)
+		{
+			descriptorHeaps[numDescriptorHeaps++] = descriptorHeap;
+		}
+	}
+
+	this->m_commandList->SetDescriptorHeaps(numDescriptorHeaps, descriptorHeaps);
 }
 
 
