@@ -59,12 +59,10 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
 
     // Vertex buffer for the cube.
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView = {};
+    std::unique_ptr<Dx12Buffer> m_vertexBuffer = nullptr;
 
     // Index buffer for the cube.
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBuffer;
-    D3D12_INDEX_BUFFER_VIEW m_indexBufferView = {};
+    std::unique_ptr<Dx12Buffer> m_indexBuffer = nullptr;
 
     TriangleOffsetCB m_triangleCB = {};
 };
@@ -81,27 +79,33 @@ void TriangleTestApp::LoadContent()
 
     auto uploadCmdList = this->m_copyQueue->GetCommandList();
 
-    uploadCmdList->CopyBuffer(
-        this->m_vertexBuffer,
-        gVertices.size(),
-        sizeof(VertexPosColour),
-        gVertices.data());
+    {
+        BufferDesc desc = {};
+        desc.Usage = Usage::Static;
+        desc.BindFlags = BIND_VERTEX_BUFFER;
+        desc.ElementByteStride = sizeof(VertexPosColour);
+        desc.NumElements = gVertices.size();
 
-    this->m_vertexBufferView.BufferLocation = this->m_vertexBuffer->GetGPUVirtualAddress();
-    this->m_vertexBufferView.StrideInBytes = sizeof(VertexPosColour);
-    this->m_vertexBufferView.SizeInBytes = sizeof(VertexPosColour) * gVertices.size();
+        this->m_vertexBuffer = std::make_unique<Dx12Buffer>(desc);
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadResource;
+        uploadCmdList->CopyBuffer<VertexPosColour>(
+            *this->m_vertexBuffer,
+            gVertices);
+    }
 
-    uploadCmdList->CopyBuffer(
-        this->m_indexBuffer,
-        gIndices.size(),
-        sizeof(uint16_t),
-        gIndices.data());
+    {
+        BufferDesc desc = {};
+        desc.Usage = Usage::Static;
+        desc.BindFlags = BIND_INDEX_BUFFER;
+        desc.ElementByteStride = sizeof(uint16_t);
+        desc.NumElements = gIndices.size();
 
-    this->m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
-    this->m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    this->m_indexBufferView.SizeInBytes = sizeof(uint16_t) * gIndices.size();
+        this->m_indexBuffer = std::make_unique<Dx12Buffer>(desc);
+
+        uploadCmdList->CopyBuffer<uint16_t>(
+            *this->m_indexBuffer,
+            gIndices);
+    }
 
     uint64_t uploadFence = this->m_copyQueue->ExecuteCommandList(uploadCmdList);
 
@@ -143,8 +147,8 @@ void TriangleTestApp::Render()
 
 
     commandList->SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->SetVertexBuffer(this->m_vertexBuffer, this->m_vertexBufferView);
-    commandList->SetIndexBuffer(this->m_indexBuffer, this->m_indexBufferView);
+    commandList->SetVertexBuffer(*this->m_vertexBuffer);
+    commandList->SetIndexBuffer(*this->m_indexBuffer);
 
 
     commandList->DrawIndexed(gIndices.size(), 1, 0, 0, 0);

@@ -21,6 +21,7 @@
 #include "Dx12/SwapChain.h"
 #include "Dx12/PipelineStateBuilder.h"
 #include "Dx12/CommandList.h"
+#include "Dx12/GraphicResourceTypes.h"
 
 // -- STL ---
 #include <memory>

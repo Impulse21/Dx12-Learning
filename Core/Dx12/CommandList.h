@@ -1,5 +1,7 @@
 #pragma once
 
+#include "pch.h"
+
 #include <wrl.h>
 #include <memory>
 #include <vector>
@@ -8,6 +10,7 @@
 
 #include "Dx12/DynamicDescriptorHeap.h"
 #include "Dx12/UploadBuffer.h"
+#include "Dx12/GraphicResourceTypes.h"
 
 namespace Core
 {
@@ -43,6 +46,22 @@ namespace Core
 			const void* data,
 			D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 
+		template<typename T>
+		void CopyBuffer(Dx12Buffer& buffer, const std::vector<T>& bufferData)
+		{
+			LOG_CORE_ASSERT(buffer.GetNumElements() == bufferData.size(), "Invalid Buffer Data size");
+			LOG_CORE_ASSERT(buffer.GetElementByteStride() == sizeof(T), "Invalid Buffer Element Stride");
+
+			Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+			this->CopyBuffer(
+				resource,
+				buffer.GetSizeInBytes(),
+				buffer.GetElementByteStride(),
+				bufferData.data());
+
+			buffer.SetDx12Resource(resource);
+		}
+
 		void ClearRenderTarget(
 			Microsoft::WRL::ComPtr<ID3D12Resource> resource,
 			D3D12_CPU_DESCRIPTOR_HANDLE rtv,
@@ -75,7 +94,10 @@ namespace Core
 		void SetPipelineState(Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState);
 
 		void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY topology);
+		void SetVertexBuffer(Dx12Buffer& vertexBuffer);
 		void SetVertexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_VERTEX_BUFFER_VIEW& vertexView);
+
+		void SetIndexBuffer(Dx12Buffer& indexBuffer);
 		void SetIndexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_INDEX_BUFFER_VIEW& indexView);
 
 		void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t startVertex = 0, uint32_t startInstance = 0);

@@ -101,7 +101,6 @@ void Core::CommandList::CopyBuffer(
 	D3D12_RESOURCE_FLAGS flags)
 {
 	size_t bufferSize = numOfElements * elementStride;
-
 	ThrowIfFailed(
 		this->m_d3d12Device->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
@@ -223,6 +222,19 @@ void Core::CommandList::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY topology)
 	this->m_commandList->IASetPrimitiveTopology(topology);
 }
 
+void Core::CommandList::SetVertexBuffer(Dx12Buffer& vertexBuffer)
+{
+	LOG_CORE_ASSERT(vertexBuffer.GetBindings() & BIND_VERTEX_BUFFER, "Unable to bind non vertex buffer");
+	D3D12_VERTEX_BUFFER_VIEW view = {};
+	view.BufferLocation = vertexBuffer.GetDx12Resource()->GetGPUVirtualAddress();
+	view.SizeInBytes = vertexBuffer.GetSizeInBytes();
+	view.StrideInBytes = vertexBuffer.GetElementByteStride();
+
+	this->SetVertexBuffer(
+		vertexBuffer.GetDx12Resource(),
+		view);
+}
+
 void Core::CommandList::SetVertexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_VERTEX_BUFFER_VIEW& vertexView)
 {
 	this->TransitionBarrier(resource, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
@@ -230,6 +242,21 @@ void Core::CommandList::SetVertexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> r
 	this->m_commandList->IASetVertexBuffers(0, 1, &vertexView);
 
 	this->TrackResource(resource);
+}
+
+void Core::CommandList::SetIndexBuffer(Dx12Buffer& indexBuffer)
+{
+	LOG_CORE_ASSERT(indexBuffer.GetBindings() & BIND_INDEX_BUFFER, "Unable to bind non index buffer");
+	LOG_CORE_ASSERT(indexBuffer.GetElementByteStride() == sizeof(uint32_t) || indexBuffer.GetElementByteStride() == sizeof(uint16_t), "Invalid Index stride");
+
+	D3D12_INDEX_BUFFER_VIEW view = {};
+	view.BufferLocation = indexBuffer.GetDx12Resource()->GetGPUVirtualAddress();
+	view.SizeInBytes = indexBuffer.GetSizeInBytes();
+	view.Format = indexBuffer.GetElementByteStride() == sizeof(uint32_t) ? DXGI_FORMAT_R32_UINT: DXGI_FORMAT_R16_UINT;
+
+	this->SetIndexBuffer(
+		indexBuffer.GetDx12Resource(),
+		view);
 }
 
 void Core::CommandList::SetIndexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_INDEX_BUFFER_VIEW& indexView)
