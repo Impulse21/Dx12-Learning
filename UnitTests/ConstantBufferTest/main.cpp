@@ -41,10 +41,10 @@ static std::vector<VertexPosColour> gVertices =
 
 static std::vector<uint16_t> gIndices = { 0, 1, 2 };
 
-class TriangleTestApp : public Dx12Application
+class TexturedTriangleTestApp : public Dx12Application
 {
 public:
-    TriangleTestApp();
+    TexturedTriangleTestApp();
 
 protected:
     void LoadContent() override;
@@ -67,13 +67,13 @@ private:
     TriangleOffsetCB m_triangleCB = {};
 };
 
-CREATE_APPLICATION(TriangleTestApp)
+CREATE_APPLICATION(TexturedTriangleTestApp)
 
-TriangleTestApp::TriangleTestApp()
+TexturedTriangleTestApp::TexturedTriangleTestApp()
 {
 }
 
-void TriangleTestApp::LoadContent()
+void TexturedTriangleTestApp::LoadContent()
 {
     this->m_triangleCB.Offset = { 0.0f, 0.0f };
 
@@ -114,7 +114,7 @@ void TriangleTestApp::LoadContent()
     this->m_copyQueue->WaitForFenceValue(uploadFence);
 }
 
-void TriangleTestApp::Update(double deltaTime)
+void TexturedTriangleTestApp::Update(double deltaTime)
 {
     static float updateTick = 0;
     m_triangleCB.Offset.x = sin(updateTick * 3.14159265/ 180);
@@ -123,7 +123,7 @@ void TriangleTestApp::Update(double deltaTime)
    
 }
 
-void TriangleTestApp::Render()
+void TexturedTriangleTestApp::Render()
 {
     auto commandList = this->m_directQueue->GetCommandList();
     auto currentBackBuffer = this->m_swapChain->GetCurrentBackBuffer();
@@ -162,7 +162,7 @@ void TriangleTestApp::Render()
     }
 }
 
-void TriangleTestApp::CreatePipelineStateObjects()
+void TexturedTriangleTestApp::CreatePipelineStateObjects()
 {
     // -- Create Root Signature ---
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};

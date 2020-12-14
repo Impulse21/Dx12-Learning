@@ -12,8 +12,6 @@
 
 #include <DirectXMath.h>
 
-#include <math.h>       /* sin */
-
 namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
@@ -25,26 +23,19 @@ struct VertexPosColour
     XMFLOAT3 Colour;
 };
 
-__declspec(align(16)) struct TriangleOffsetCB
-{
-    XMFLOAT2 Offset;
-};
-
-static_assert((sizeof(TriangleOffsetCB) % (sizeof(float) * 4)) == 0, "Invalid struture size");
-
 static std::vector<VertexPosColour> gVertices =
 {
-    { XMFLOAT3(0.0f, -0.5f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-    { XMFLOAT3(-0.5f, 0.5f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-    { XMFLOAT3(0.5f, 0.5f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }
+    { XMFLOAT3(0.0f, 0.5f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+    { XMFLOAT3(-0.5f, -0.5f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+    { XMFLOAT3(0.5f, -0.5f, 0.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }
 };
 
-static std::vector<uint16_t> gIndices = { 0, 1, 2 };
+static std::vector<uint16_t> gIndices = { 0, 2, 1 };
 
-class TriangleTestApp : public Dx12Application
+class TexturedTriangleTestApp : public Dx12Application
 {
 public:
-    TriangleTestApp();
+    TexturedTriangleTestApp();
 
 protected:
     void LoadContent() override;
@@ -56,56 +47,52 @@ private:
 
 private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_emptyRootSignature;
 
     // Vertex buffer for the cube.
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView = {};
+    std::unique_ptr<Dx12Buffer> m_vertexBuffer = nullptr;
 
     // Index buffer for the cube.
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBuffer;
-    D3D12_INDEX_BUFFER_VIEW m_indexBufferView = {};
-
-    TriangleOffsetCB m_triangleCB = {};
+    std::unique_ptr<Dx12Buffer> m_indexBuffer = nullptr;
 };
 
-CREATE_APPLICATION(TriangleTestApp)
+CREATE_APPLICATION(TexturedTriangleTestApp)
 
-TriangleTestApp::TriangleTestApp()
+TexturedTriangleTestApp::TexturedTriangleTestApp()
 {
 }
 
-void TriangleTestApp::LoadContent()
+void TexturedTriangleTestApp::LoadContent()
 {
     auto uploadCmdList = this->m_copyQueue->GetCommandList();
 
-    m_triangleCB.Offset = { 0.0f, 0.0f };
+    {
+        BufferDesc desc = {};
+        desc.Usage = Usage::Static;
+        desc.BindFlags = BIND_VERTEX_BUFFER;
+        desc.ElementByteStride = sizeof(VertexPosColour);
+        desc.NumElements = gVertices.size();
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadResource;
-    this->UploadBufferResource(
-        uploadCmdList.Get(),
-        &this->m_vertexBuffer,
-        &vertexUploadResource,
-        gVertices.size(),
-        sizeof(VertexPosColour),
-        gVertices.data());
+        this->m_vertexBuffer = std::make_unique<Dx12Buffer>(desc);
 
-    this->m_vertexBufferView.BufferLocation = this->m_vertexBuffer->GetGPUVirtualAddress();
-    this->m_vertexBufferView.StrideInBytes = sizeof(VertexPosColour);
-    this->m_vertexBufferView.SizeInBytes = sizeof(VertexPosColour) * gVertices.size();
+        uploadCmdList->CopyBuffer<VertexPosColour>(
+            *this->m_vertexBuffer,
+            gVertices);
+    }
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadResource;
-    this->UploadBufferResource(
-        uploadCmdList.Get(),
-        &this->m_indexBuffer,
-        &indexUploadResource,
-        gIndices.size(),
-        sizeof(uint16_t),
-        gIndices.data());
+    {
+        BufferDesc desc = {};
+        desc.Usage = Usage::Static;
+        desc.BindFlags = BIND_INDEX_BUFFER;
+        desc.ElementByteStride = sizeof(uint16_t);
+        desc.NumElements = gIndices.size();
 
-    this->m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
-    this->m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    this->m_indexBufferView.SizeInBytes = sizeof(uint16_t) * gIndices.size();
+        this->m_indexBuffer = std::make_unique<Dx12Buffer>(desc);
+
+        uploadCmdList->CopyBuffer<uint16_t>(
+            *this->m_indexBuffer,
+            gIndices);
+    }
 
     uint64_t uploadFence = this->m_copyQueue->ExecuteCommandList(uploadCmdList);
 
@@ -114,65 +101,47 @@ void TriangleTestApp::LoadContent()
     this->m_copyQueue->WaitForFenceValue(uploadFence);
 }
 
-void TriangleTestApp::Update(double deltaTime)
+void TexturedTriangleTestApp::Update(double deltaTime)
 {
-    static float updateTick = 0;
-    m_triangleCB.Offset.x = sin(updateTick * 3.14159265/ 180);
-    // m_triangleCB.Offset.y = sin(updateTick * 3.14159265 / 180);
-    updateTick += 0.1;
-   
 }
 
-void TriangleTestApp::Render()
+void TexturedTriangleTestApp::Render()
 {
     auto commandList = this->m_directQueue->GetCommandList();
     auto currentBackBuffer = this->m_swapChain->GetCurrentBackBuffer();
     auto rtv = this->m_rtvDescriptorHeap->GetCpuHandle(this->m_swapChain->GetCurrentBufferIndex());
 
-    // Clear the render targets.
-    {
-        CommandListHelpers::TransitionResource(
-            commandList,
-            currentBackBuffer,
-            D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-
-        CommandListHelpers::ClearRenderTarget(commandList, rtv, { 0.4f, 0.6f, 0.9f, 1.0f });
-        // ClearDepth(commandList, dsv);
-    }
+    commandList->ClearRenderTarget(currentBackBuffer, rtv, { 0.4f, 0.6f, 0.9f, 1.0f });
 
     static CD3DX12_VIEWPORT viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, this->m_window->GetWidth(), this->m_window->GetHeight());
-    commandList->RSSetViewports(1, &viewport);
+    commandList->SetViewport(viewport);
 
     static CD3DX12_RECT rect = CD3DX12_RECT(0, 0, LONG_MAX, LONG_MAX);
-    commandList->RSSetScissorRects(1, &rect);
+    commandList->SetScissorRect(rect);
 
     // Set Render Target
-    commandList->OMSetRenderTargets(1, &rtv, false, nullptr);
+    commandList->SetRenderTarget(currentBackBuffer, rtv);
 
-    commandList->SetGraphicsRootSignature(this->m_rootSignature.Get());
-    commandList->SetGraphicsRoot32BitConstants(0, sizeof(TriangleOffsetCB) / 4, &this->m_triangleCB, 0);
-    commandList->SetPipelineState(this->m_pso.Get());
+    commandList->SetGraphicsRootSignature(this->m_emptyRootSignature);
 
-    commandList->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->IASetVertexBuffers(0, 1, &this->m_vertexBufferView);
-    commandList->IASetIndexBuffer(&this->m_indexBufferView);
+    commandList->SetPipelineState(this->m_pso);
 
-    commandList->DrawIndexedInstanced(gIndices.size(), 1, 0, 0, 0);
+    commandList->SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->SetVertexBuffer(*this->m_vertexBuffer);
+    commandList->SetIndexBuffer(*this->m_indexBuffer);
+
+    commandList->DrawIndexed(gIndices.size(), 1, 0, 0, 0);
 
     // Prepare Render target for present
     {
-        CommandListHelpers::TransitionResource(
-            commandList,
-            currentBackBuffer,
-            D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+        commandList->TransitionBarrier(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT);
 
         uint64_t commandFence = this->m_directQueue->ExecuteCommandList(commandList);
         this->SetCurrentFrameFence(commandFence);
     }
 }
 
-void TriangleTestApp::CreatePipelineStateObjects()
+void TexturedTriangleTestApp::CreatePipelineStateObjects()
 {
     // -- Create Root Signature ---
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
@@ -182,12 +151,8 @@ void TriangleTestApp::CreatePipelineStateObjects()
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
     }
 
-    // A single 32-bit constant root parameter that is used by the vertex shader.
-    CD3DX12_ROOT_PARAMETER1 rootParameters[1] = {};
-    rootParameters[0].InitAsConstants(sizeof(TriangleOffsetCB) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-    rootSignatureDescription.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    rootSignatureDescription.Init_1_1(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     // Serialize the root signature.
     Microsoft::WRL::ComPtr<ID3DBlob> rootSignatureBlob;
@@ -205,7 +170,7 @@ void TriangleTestApp::CreatePipelineStateObjects()
             0,
             rootSignatureBlob->GetBufferPointer(),
             rootSignatureBlob->GetBufferSize(),
-            IID_PPV_ARGS(&this->m_rootSignature)));
+            IID_PPV_ARGS(&this->m_emptyRootSignature)));
 
 
     // Create the vertex input layout
@@ -216,7 +181,7 @@ void TriangleTestApp::CreatePipelineStateObjects()
 
     PipelineStateBuilder builder;
     builder.SetInputElementDesc(inputLayout);
-    builder.SetRootSignature(this->m_rootSignature.Get());
+    builder.SetRootSignature(this->m_emptyRootSignature.Get());
     std::string baseAssetPath(fs::current_path().u8string());
 
     std::vector<char> vertexByteData;

@@ -4,3 +4,6 @@
 [submodule "ThridParty/glfw"]
 	path = ThridParty/glfw
 	url = https://github.com/Impulse21/glfw
+[submodule "ThridParty/DirectXTex"]
+	path = ThridParty/DirectXTex
+	url = https://github.com/microsoft/DirectXTex.git

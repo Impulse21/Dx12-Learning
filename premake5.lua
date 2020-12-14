@@ -46,6 +46,12 @@ group "_ThridParty"
 	include "ThridParty/glfw"
 	include "ThridParty/imgui"
 
+	externalproject "DirectXTex_Desktop_2019"
+		location "ThridParty/DirectXTex/DirectXTex"
+		uuid "57940020-8E99-AEB6-271F-61E0F7F6B73B"
+		kind "StaticLib"
+		language "C++"
+
 group "Core"
 	project "Core"
 		kind "StaticLib"
