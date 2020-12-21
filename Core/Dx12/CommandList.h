@@ -11,16 +11,19 @@
 #include "Dx12/DynamicDescriptorHeap.h"
 #include "Dx12/UploadBuffer.h"
 #include "Dx12/GraphicResourceTypes.h"
+#include "Dx12/RootSignature.h"
 
 namespace Core
 {
 	class ResourceStateTracker;
+	class Dx12RenderDevice;
 
 	class CommandList
 	{
 	public:
 		CommandList(
-			Microsoft::WRL::ComPtr<ID3D12Device2> device,
+			D3D12_COMMAND_LIST_TYPE type,
+			std::shared_ptr<Dx12RenderDevice> renderDevice,
 			Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList,
 			ID3D12CommandAllocator* allocator);
 
@@ -39,6 +42,16 @@ namespace Core
 			bool flushBarriers = false);
 
 	public:
+		void LoadTextureFromFile(Dx12Texture& texture, std::wstring const& filename);
+
+		void GenerateMips(Dx12Texture& texture);
+
+		void CopyTextureSubresource(
+			Dx12Texture& texture,
+			uint32_t firstSubResource,
+			uint32_t numSubresources,
+			D3D12_SUBRESOURCE_DATA* subresourceData);
+
 		void CopyBuffer(
 			Microsoft::WRL::ComPtr<ID3D12Resource>& buffer,
 			size_t numOfElements,
@@ -89,8 +102,21 @@ namespace Core
 		}
 
 		void SetGraphicsRootShaderResourceView(uint32_t rootParameterIndex, Microsoft::WRL::ComPtr<ID3D12Resource> resource);
-
 		void SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+
+		void SetShaderResourceView(
+			uint32_t rootParameterIndex,
+			uint32_t descritporOffset,
+			Dx12Resrouce const& resource,
+			D3D12_RESOURCE_STATES stateAfter = 
+				D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+				D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+			UINT firstSubresource = 0,
+			UINT numSubresources = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+			const D3D12_SHADER_RESOURCE_VIEW_DESC* srv = nullptr);
+
+		void SetGraphicsRootSignature(RootSignature const& rootSignature);
+
 		void SetPipelineState(Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState);
 
 		void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY topology);
@@ -115,9 +141,11 @@ namespace Core
 		void BindDescriptorHeaps();
 
 	private:
-		Microsoft::WRL::ComPtr<ID3D12Device2> m_d3d12Device;
+		D3D12_COMMAND_LIST_TYPE m_type;
+		std::shared_ptr<Dx12RenderDevice> m_renderDevice;
 
 		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> m_commandList;
+		std::shared_ptr<CommandList> m_computeCommandList;
 		ID3D12CommandAllocator* m_allocator;
 
 		using TrackedObjects = std::vector<Microsoft::WRL::ComPtr<ID3D12Object>>;
@@ -131,5 +159,13 @@ namespace Core
 		// Keep track of the currently bound descriptor heaps. Only change descriptor 
 		// heaps if they are different than the currently bound descriptor heaps.
 		ID3D12DescriptorHeap* m_descriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
+
+		// Keep track of the currently bound root signatures to minimize root
+		// signature changes.
+		ID3D12RootSignature* m_rootSignature;
+
+	private:
+		static std::map<std::wstring, ID3D12Resource*> ms_textureCache;
+		static std::mutex ms_textureCacheMutex;
 	};
 }

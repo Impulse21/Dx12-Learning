@@ -19,7 +19,7 @@ using namespace Core;
 using namespace DirectX;
 
 
-struct VertexPosColour
+struct VertexPosTex
 {
     XMFLOAT3 Position;
     XMFLOAT3 Colour;
@@ -40,7 +40,7 @@ static std::vector<TriangleOffset> gTriangleOffsets =
     { XMFLOAT2(0.0f, 0.5f)   }
 };
 
-static std::vector<VertexPosColour> gVertices =
+static std::vector<VertexPosTex> gVertices =
 {
     { XMFLOAT3(0.1f, -0.1f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
     { XMFLOAT3(-0.1f, -0.1f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
@@ -85,7 +85,8 @@ TexturedTriangleTestApp::TexturedTriangleTestApp()
 
 void TexturedTriangleTestApp::LoadContent()
 {
-    auto uploadCmdList = this->m_copyQueue->GetCommandList();
+    auto copyQueue = this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COPY);
+    auto uploadCmdList = copyQueue->GetCommandList();
 
     uploadCmdList->CopyBuffer(
         this->m_structuredBuffer,
@@ -95,37 +96,37 @@ void TexturedTriangleTestApp::LoadContent()
 
     {
         BufferDesc desc = {};
-        desc.Usage = Usage::Static;
+        desc.Usage = BufferUsage::Static;
         desc.BindFlags = BIND_VERTEX_BUFFER;
-        desc.ElementByteStride = sizeof(VertexPosColour);
+        desc.ElementByteStride = sizeof(VertexPosTex);
         desc.NumElements = gVertices.size();
 
-        this->m_vertexBuffer = std::make_unique<Dx12Buffer>(desc);
+        this->m_vertexBuffer = std::make_unique<Dx12Buffer>(this->m_renderDevice, desc);
 
-        uploadCmdList->CopyBuffer<VertexPosColour>(
+        uploadCmdList->CopyBuffer<VertexPosTex>(
             *this->m_vertexBuffer,
             gVertices);
     }
 
     {
         BufferDesc desc = {};
-        desc.Usage = Usage::Static;
+        desc.Usage = BufferUsage::Static;
         desc.BindFlags = BIND_INDEX_BUFFER;
         desc.ElementByteStride = sizeof(uint16_t);
         desc.NumElements = gIndices.size();
 
-        this->m_indexBuffer = std::make_unique<Dx12Buffer>(desc);
+        this->m_indexBuffer = std::make_unique<Dx12Buffer>(this->m_renderDevice, desc);
 
         uploadCmdList->CopyBuffer<uint16_t>(
             *this->m_indexBuffer,
             gIndices);
     }
 
-    uint64_t uploadFence = this->m_copyQueue->ExecuteCommandList(uploadCmdList);
+    uint64_t uploadFence = copyQueue->ExecuteCommandList(uploadCmdList);
 
     this->CreatePipelineStateObjects();
 
-    this->m_copyQueue->WaitForFenceValue(uploadFence);
+    copyQueue->WaitForFenceValue(uploadFence);
 }
 
 void TexturedTriangleTestApp::Update(double deltaTime)
@@ -135,11 +136,9 @@ void TexturedTriangleTestApp::Update(double deltaTime)
 
 void TexturedTriangleTestApp::Render()
 {
-
-    auto commandList = this->m_directQueue->GetCommandList();
+    auto commandList = this->m_renderDevice->GetQueue()->GetCommandList();
     auto currentBackBuffer = this->m_swapChain->GetCurrentBackBuffer();
-    auto rtv = this->m_rtvDescriptorHeap->GetCpuHandle(this->m_swapChain->GetCurrentBufferIndex());
-
+    auto rtv = this->m_swapChain->GetCurrentRenderTargetView();
 
     commandList->ClearRenderTarget(currentBackBuffer, rtv, { 0.4f, 0.6f, 0.9f, 1.0f });
 
@@ -168,17 +167,17 @@ void TexturedTriangleTestApp::Render()
     {
         commandList->TransitionBarrier(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT);
 
-        uint64_t commandFence = this->m_directQueue->ExecuteCommandList(commandList);
+        uint64_t commandFence = this->m_renderDevice->GetQueue()->ExecuteCommandList(commandList);
         this->SetCurrentFrameFence(commandFence);
     }
 }
 
 void TexturedTriangleTestApp::CreatePipelineStateObjects()
-{
+{    
     // -- Create Root Signature ---
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    if (FAILED(this->m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+    if (FAILED(this->m_renderDevice->GetD3DDevice()->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
     {
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
     }
@@ -202,12 +201,11 @@ void TexturedTriangleTestApp::CreatePipelineStateObjects()
 
     // Create the root signature.
     ThrowIfFailed(
-        this->m_d3d12Device->CreateRootSignature(
+        this->m_renderDevice->GetD3DDevice()->CreateRootSignature(
             0,
             rootSignatureBlob->GetBufferPointer(),
             rootSignatureBlob->GetBufferSize(),
             IID_PPV_ARGS(&this->m_rootSignature)));
-
 
     // Create the vertex input layout
     std::vector<D3D12_INPUT_ELEMENT_DESC> inputLayout = {
@@ -235,5 +233,5 @@ void TexturedTriangleTestApp::CreatePipelineStateObjects()
     builder.SetRenderTargetFormat(this->m_swapChain->GetFormat());
 
 
-    this->m_pso = builder.Build(this->m_d3d12Device.Get(), L"Pipeline state");
+    this->m_pso = builder.Build(this->m_renderDevice->GetD3DDevice().Get(), L"Pipeline state");
 }

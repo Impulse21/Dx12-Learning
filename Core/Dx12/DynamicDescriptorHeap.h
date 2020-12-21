@@ -13,6 +13,7 @@
 namespace Core
 {
     class CommandList;
+    class RootSignature;
 
 	class DynamicDescriptorHeap
 	{
@@ -80,8 +81,7 @@ namespace Core
           * descriptor tables and determine the number of descriptors needed for
           * each table.
           */
-        // TODO:
-         // void ParseRootSignature(const RootSignature& rootSignature);
+         void ParseRootSignature(RootSignature const& rootSignature);
 
     private:
         // Request a descriptor heap if one is available.

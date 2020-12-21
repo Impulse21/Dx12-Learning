@@ -76,7 +76,7 @@ group "Core"
 			"ThridParty/spdlog/include",
 			
 			"ThridParty/glfw/include",
-			-- "3rdParty/dxc_2020_10-22/inc",
+			"ThridParty/DirectXTex"
 		}
 
 		links
@@ -85,6 +85,7 @@ group "Core"
 			"dxgi.lib",
 			"dxguid.lib",
 			"GLFW",
+			"DirectXTex",
 			-- "3rdParty/dxc_2020_10-22/lib/dxcompiler.lib"
 		}
 

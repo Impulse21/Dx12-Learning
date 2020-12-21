@@ -8,7 +8,8 @@ DescriptorAllocator::DescriptorAllocator(
 	Microsoft::WRL::ComPtr<ID3D12Device2> device,
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType,
 	uint32_t numDescriptorsPerHeap)
-	: m_heapType(heapType)
+	: m_device(device)
+	, m_heapType(heapType)
 	, m_numDescriptorsPerHeap(numDescriptorsPerHeap)
 {
 }

@@ -1,28 +1,43 @@
 #include "pch.h"
 #include "CommandList.h"
 
+#include <filesystem>
+
 #include "d3dx12.h"
 
 #include "ResourceStateTracker.h"
 #include "UploadBuffer.h"
 #include "DynamicDescriptorHeap.h"
 
+#include "DirectXTex/DirectXTex.h"
+
+#include "Dx12RenderDevice.h"
+
+namespace fs = std::filesystem;
+
+using namespace Core;
+
+std::map<std::wstring, ID3D12Resource* > CommandList::ms_textureCache;
+std::mutex CommandList::ms_textureCacheMutex;
+
 Core::CommandList::CommandList(
-	Microsoft::WRL::ComPtr<ID3D12Device2> device,
+	D3D12_COMMAND_LIST_TYPE type,
+	std::shared_ptr<Dx12RenderDevice> renderDevice,
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList,
 	ID3D12CommandAllocator* allocator)
-	: m_d3d12Device(device)
+	: m_type(type)
+	, m_renderDevice(renderDevice)
 	, m_commandList(commandList)
 	, m_allocator(allocator)
 	, m_resourceStateTracker(std::make_unique<ResourceStateTracker>())
-	, m_uploadBuffer(std::make_unique<UploadBuffer>(this->m_d3d12Device))
+	, m_uploadBuffer(std::make_unique<UploadBuffer>(renderDevice->GetD3DDevice()))
 {
 	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
 	{
 		this->m_dynamicDescriptorHeap[i] =
 			std::make_unique<DynamicDescriptorHeap>(
 				static_cast<D3D12_DESCRIPTOR_HEAP_TYPE>(i),
-				this->m_d3d12Device);
+				this->m_renderDevice->GetD3DDevice());
 
 		this->m_descriptorHeaps[i] = nullptr;
 	}
@@ -93,6 +108,230 @@ void Core::CommandList::TransitionBarrier(Microsoft::WRL::ComPtr<ID3D12Resource>
 	}
 }
 
+void Core::CommandList::LoadTextureFromFile(Dx12Texture& texture, std::wstring const& filename)
+{
+	fs::path filePath(filename);
+	if (!fs::exists(filePath))
+	{
+		throw std::exception("File not found.");
+	}
+
+	// Check cache
+	std::lock_guard<std::mutex> lock(ms_textureCacheMutex);
+	auto iter = ms_textureCache.find(filename);
+	if (iter != ms_textureCache.end())
+	{
+		texture.SetDx12Resource(iter->second);
+		return;
+	}
+
+	// Create Texture
+	DirectX::TexMetadata metadata;
+	DirectX::ScratchImage scratchImage;
+
+	if (filePath.extension() == ".dds")
+	{
+		// Load DDS
+		ThrowIfFailed(
+			DirectX::LoadFromDDSFile(
+				filename.c_str(),
+				DirectX::DDS_FLAGS_FORCE_RGB,
+				&metadata,
+				scratchImage));
+	}
+	else if (filePath.extension() == ".hdr")
+	{
+		// Load DDS
+		ThrowIfFailed(
+			DirectX::LoadFromHDRFile(
+				filename.c_str(),
+				&metadata,
+				scratchImage));
+	}
+	else if (filePath.extension() == ".tga")
+	{
+		// Load DDS
+		ThrowIfFailed(
+			DirectX::LoadFromTGAFile(
+				filename.c_str(),
+				&metadata,
+				scratchImage));
+	}
+	else
+	{
+		ThrowIfFailed(
+			DirectX::LoadFromWICFile(
+				filename.c_str(),
+				DirectX::WIC_FLAGS_FORCE_RGB,
+				&metadata,
+				scratchImage));
+	}
+
+	D3D12_RESOURCE_DESC textureDesc = {};
+	switch (metadata.dimension)
+	{
+	case DirectX::TEX_DIMENSION_TEXTURE1D:
+		textureDesc = CD3DX12_RESOURCE_DESC::Tex1D(
+			metadata.format,
+			static_cast<UINT64>(metadata.width),
+			static_cast<UINT16>(metadata.arraySize));
+		break;
+	case DirectX::TEX_DIMENSION_TEXTURE2D:
+		textureDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+			metadata.format,
+			static_cast<UINT64>(metadata.width),
+			static_cast<UINT>(metadata.height),
+			static_cast<UINT16>(metadata.arraySize));
+		break;
+	case DirectX::TEX_DIMENSION_TEXTURE3D:
+		textureDesc = CD3DX12_RESOURCE_DESC::Tex3D(
+			metadata.format,
+			static_cast<UINT64>(metadata.width),
+			static_cast<UINT>(metadata.height),
+			static_cast<UINT16>(metadata.arraySize));
+		break;
+
+	default:
+		throw std::exception("Invalid texture dimension.");
+		break;
+	}
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource;
+	ThrowIfFailed(
+		this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+			D3D12_HEAP_FLAG_NONE,
+			&textureDesc,
+			D3D12_RESOURCE_STATE_COMMON,
+			nullptr,
+			IID_PPV_ARGS(&textureResource)));
+
+	SetD3DDebugName(textureResource, L"Texture");
+
+	texture.SetDx12Resource(textureResource);
+	ResourceStateTracker::AddGlobalResourceState(
+		textureResource.Get(),
+		D3D12_RESOURCE_STATE_COMMON);
+
+	std::vector<D3D12_SUBRESOURCE_DATA> subresources(scratchImage.GetImageCount());
+	const DirectX::Image* pImages = scratchImage.GetImages();
+	for (int i = 0; i < scratchImage.GetImageCount(); ++i)
+	{
+		auto& subresource = subresources[i];
+		subresource.RowPitch = pImages[i].rowPitch;
+		subresource.SlicePitch = pImages[i].slicePitch;
+		subresource.pData = pImages[i].pixels;
+	}
+
+	this->CopyTextureSubresource(
+		texture,
+		0,
+		static_cast<uint32_t>(subresources.size()),
+		subresources.data());
+
+	if (subresources.size() < textureResource->GetDesc().MipLevels)
+	{
+		// this->GenerateMips(texture);
+	}
+
+	ms_textureCache[filename] = textureResource.Get();
+}
+
+void Core::CommandList::GenerateMips(Dx12Texture& texture)
+{
+	return;
+	if (this->m_type == D3D12_COMMAND_LIST_TYPE_COPY)
+	{
+		if (this->m_computeCommandList)
+		{
+			this->m_computeCommandList = 
+				this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COMPUTE)->GetCommandList();
+
+			this->m_computeCommandList->GenerateMips(texture);
+			return;
+		}
+	}
+
+	auto resource = texture.GetDx12Resource();
+
+	// If the texture doesn't have a valid resource, do nothing.
+	if (!resource)
+	{
+		return;
+	}
+
+	auto resourceDesc = resource->GetDesc();
+	// If the texture only has a single mip level (level 0)
+	// do nothing.
+	if (resourceDesc.MipLevels == 1)
+	{
+		return;
+	}
+
+	// Currently, only non-multi-sampled 2D textures are supported.
+	if (resourceDesc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D ||
+		resourceDesc.DepthOrArraySize != 1 ||
+		resourceDesc.SampleDesc.Count > 1)
+	{
+		throw std::exception("GenerateMips is only supported for non-multi-sampled 2D Textures.");
+	}
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> uavResource = resource;
+
+	// Create an alias of the original resource.
+	// This is done to perform a GPU copy of resources with different formats.
+	// BGR -> RGB texture copies will fail GPU validation unless performed 
+	// through an alias of the BRG resource in a placed heap.
+	Microsoft::WRL::ComPtr<ID3D12Resource> aliasResource;
+
+	// TODO:
+}
+
+void Core::CommandList::CopyTextureSubresource(
+	Dx12Texture& texture,
+	uint32_t firstSubResource,
+	uint32_t numSubresources,
+	D3D12_SUBRESOURCE_DATA* subresourceData)
+{
+	auto destinationResource = texture.GetDx12Resource();
+
+	if (!destinationResource)
+	{
+		return;
+	}
+
+	this->TransitionBarrier(destinationResource, D3D12_RESOURCE_STATE_COPY_DEST);
+	this->FlushResourceBarriers();
+
+	uint64_t requiredSize = 
+		GetRequiredIntermediateSize(
+			destinationResource.Get(),
+			firstSubResource,
+			numSubresources);
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource;
+	ThrowIfFailed(
+		this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+			D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(requiredSize),
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&intermediateResource)));
+
+	UpdateSubresources(
+		this->m_commandList.Get(),
+		destinationResource.Get(),
+		intermediateResource.Get(),
+		0,
+		firstSubResource,
+		numSubresources,
+		subresourceData);
+
+	this->TrackResource(intermediateResource);
+	this->TrackResource(destinationResource);
+}
+
 void Core::CommandList::CopyBuffer(
 	Microsoft::WRL::ComPtr<ID3D12Resource>& buffer,
 	size_t numOfElements,
@@ -102,7 +341,7 @@ void Core::CommandList::CopyBuffer(
 {
 	size_t bufferSize = numOfElements * elementStride;
 	ThrowIfFailed(
-		this->m_d3d12Device->CreateCommittedResource(
+		this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
 			D3D12_HEAP_FLAG_NONE,
 			&CD3DX12_RESOURCE_DESC::Buffer(bufferSize, flags),
@@ -116,7 +355,7 @@ void Core::CommandList::CopyBuffer(
 	{
 		Microsoft::WRL::ComPtr<ID3D12Resource> uploadResource;
 		ThrowIfFailed(
-			this->m_d3d12Device->CreateCommittedResource(
+			this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
 				&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
 				D3D12_HEAP_FLAG_NONE,
 				&CD3DX12_RESOURCE_DESC::Buffer(bufferSize),
@@ -205,10 +444,53 @@ void Core::CommandList::SetGraphicsRootShaderResourceView(
 	this->TrackResource(resource);
 }
 
+void Core::CommandList::SetGraphicsRootSignature(RootSignature const& rootSignature)
+{
+	auto d3d12RootSignature = rootSignature.GetRootSignature().Get();
+	if (d3d12RootSignature == this->m_rootSignature)
+	{
+		//return;
+	}
+
+	this->m_rootSignature = d3d12RootSignature;
+
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i]->ParseRootSignature(rootSignature);
+	}
+
+	this->m_commandList->SetGraphicsRootSignature(m_rootSignature);
+	this->TrackResource(m_rootSignature);
+}
+
 void Core::CommandList::SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
 {
 	this->m_commandList->SetGraphicsRootSignature(rootSignature.Get());
 	this->TrackResource(rootSignature);
+}
+
+void Core::CommandList::SetShaderResourceView(uint32_t rootParameterIndex, uint32_t descritporOffset, Dx12Resrouce const& resource, D3D12_RESOURCE_STATES stateAfter, UINT firstSubresource, UINT numSubresources, const D3D12_SHADER_RESOURCE_VIEW_DESC* srv)
+{
+	if (numSubresources < D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+	{
+		for (uint32_t i = 0; i < numSubresources; i++)
+		{
+			this->TransitionBarrier(resource.GetDx12Resource(), stateAfter, firstSubresource + i);
+		}
+	}
+	else
+	{
+		this->TransitionBarrier(resource.GetDx12Resource(), stateAfter);
+	}
+
+	this->m_dynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]
+		->StageDescriptors(
+			rootParameterIndex,
+			descritporOffset,
+			1,
+			resource.GetShaderResourceView(srv));
+
+	this->TrackResource(resource.GetDx12Resource());
 }
 
 void Core::CommandList::SetPipelineState(Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState)
@@ -274,6 +556,13 @@ void Core::CommandList::Draw(
 	uint32_t startVertex,
 	uint32_t startInstance)
 {
+	this->FlushResourceBarriers();
+	
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i]->CommitStagedDescriptorsForDraw(*this);
+	}
+
 	this->m_commandList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
 
@@ -284,6 +573,13 @@ void Core::CommandList::DrawIndexed(
 	int32_t baseVertex,
 	uint32_t startInstance)
 {
+	this->FlushResourceBarriers();
+
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i]->CommitStagedDescriptorsForDraw(*this);
+	}
+
 	this->m_commandList->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, startInstance);
 }
 

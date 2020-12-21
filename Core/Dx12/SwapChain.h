@@ -6,15 +6,18 @@
 #include <memory>
 #include <vector>
 
+#include "DescriptorHeap.h"
+
 namespace Core
 {
-	class DescriptorHeap;
+	class Dx12RenderDevice;
 	class SwapChain
 	{
 	public:
 		SwapChain(
 			Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain,
-			std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>&& m_backBuffers,
+			std::shared_ptr<Dx12RenderDevice> renderDevice,
+			int numOfBuffer,
 			DXGI_FORMAT format);
 		~SwapChain() {};
 
@@ -27,6 +30,14 @@ namespace Core
 		}
 
 		DXGI_FORMAT GetFormat() const { return this->Format; }
+
+		/**
+		 * Get the render target view for the current back buffer.
+		 */
+		D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentRenderTargetView() const
+		{
+			return this->m_rtvHeap->GetCpuHandle(this->m_currBufferIndex);
+		}
 
 	private:
 		const int NumOfBuffers;

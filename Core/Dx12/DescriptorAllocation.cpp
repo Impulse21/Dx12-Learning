@@ -56,6 +56,12 @@ DescriptorAllocation& Core::DescriptorAllocation::operator=(DescriptorAllocation
     return *this;
 }
 
+D3D12_CPU_DESCRIPTOR_HANDLE Core::DescriptorAllocation::GetDescriptorHandle(uint32_t offset) const
+{
+    LOG_CORE_ASSERT(offset < this->m_numHandles, "Offset out of range");
+    return { this->m_descriptor.ptr + (this->m_descriptorSize * offset) };
+}
+
 void Core::DescriptorAllocation::Free()
 {
     if (!this->IsNull() && this->m_page)

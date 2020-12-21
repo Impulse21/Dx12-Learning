@@ -36,12 +36,7 @@ namespace Core
         bool IsNull() const { return this->m_descriptor.ptr == 0; }
 
         // Get a descriptor at a particular offset in the allocation.
-        D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandle(uint32_t offset = 0) const
-        {
-            LOG_CORE_ASSERT(offset < this->m_numHandles, "Offset out of range");
-            return { this->m_descriptor.ptr + (this->m_descriptorSize * offset) };
-        }
-
+        D3D12_CPU_DESCRIPTOR_HANDLE GetDescriptorHandle(uint32_t offset = 0) const;
         // Get the number of (consecutive) handles for this allocation.
         uint32_t GetNumHandles() const { return this->m_numHandles; }
 

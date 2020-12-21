@@ -16,8 +16,7 @@
 #include <dxgidebug.h>
 #endif
 
-#include "Dx12/DescriptorHeap.h"
-#include "Dx12/CommandQueue.h"
+#include "Dx12/Dx12RenderDevice.h"
 #include "Dx12/SwapChain.h"
 #include "Dx12/PipelineStateBuilder.h"
 #include "Dx12/CommandList.h"
@@ -65,37 +64,18 @@ namespace Core
 	private:
 		void InitializeDx12();
 
-		void CreateDevice(Microsoft::WRL::ComPtr<IDXGIFactory6> dxgiFactory);
 		void CreateSwapChain(Microsoft::WRL::ComPtr<IDXGIFactory6> dxgiFactory, IWindow* window);
-		void EnableDebugLayer();
-		Microsoft::WRL::ComPtr<IDXGIAdapter1> FindCompatibleAdapter(Microsoft::WRL::ComPtr<IDXGIFactory6> dxgiFactory);
-
-		void CreateCommandQueues();
-		void CreateDescriptorHeaps();
-		void InitializeSwapChainRenderTargets();
 
 	protected:
 		const uint8_t NumOfBuffers = 3;
 		std::shared_ptr<IWindow> m_window;
 
-		// -- Dx12 resources ---
-		Microsoft::WRL::ComPtr<IDXGIAdapter1> m_dxgiAdapter;
-		Microsoft::WRL::ComPtr<ID3D12Device2> m_d3d12Device;
-
+		std::shared_ptr<Dx12RenderDevice> m_renderDevice;
 		std::unique_ptr<SwapChain> m_swapChain;
-
-		// -- Queues ---
-		std::unique_ptr<CommandQueue> m_directQueue;
-		std::unique_ptr<CommandQueue> m_computeQueue;
-		std::unique_ptr<CommandQueue> m_copyQueue;
-
-		// -- Descriptors ---
-		std::unique_ptr<DescriptorHeap> m_rtvDescriptorHeap;
-		std::unique_ptr<DescriptorHeap> m_dsvDescriptorHeap;
 
 		// -- Frame resources ---
 		std::vector<uint64_t> m_frameFences;
-
+		std::vector<uint64_t> m_frameCounts;
 		uint64_t m_frameCount = 0;
 	};
 }

@@ -4,16 +4,18 @@
 #include "CommandList.h"
 #include "ResourceStateTracker.h"
 
+#include "Dx12RenderDevice.h"
+
 using namespace Core;
 using namespace Microsoft::WRL;
 
 CommandQueue::CommandQueue(
-	Microsoft::WRL::ComPtr<ID3D12Device2> device,
+	std::shared_ptr<Dx12RenderDevice> renderDevice,
 	D3D12_COMMAND_LIST_TYPE type)
 	: m_type(type)
-	, m_device(device)
+	, m_renderDevice(renderDevice)
 	, m_fenceValue(0)
-	, m_commandAllocatorPool(device, type)
+	, m_commandAllocatorPool(renderDevice->GetD3DDevice(), type)
 	, m_bProcessInflightCommandLists(true)
 {
 	// Create Command Queue
@@ -23,12 +25,13 @@ CommandQueue::CommandQueue(
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	queueDesc.NodeMask = 0;
 
+	auto device = this->m_renderDevice->GetD3DDevice();
 	ThrowIfFailed(
-		this->m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&this->m_commandQueue)));
+		device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&this->m_commandQueue)));
 
 	// Create Fence
 	ThrowIfFailed(
-		this->m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&this->m_fence)));
+		device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&this->m_fence)));
 	this->m_fence->SetName(L"Dx12CommandQueue::Dx12CommandQueue::Fence");
 
 	switch (type)
@@ -68,7 +71,8 @@ std::shared_ptr<CommandList> Core::CommandQueue::GetCommandList()
 		ID3D12CommandAllocator* commandAllocator = this->RequestAllocator();
 		auto d3d12CommandList = this->CreateCommandList(commandAllocator);
 		commandList = std::make_shared<CommandList>(
-			this->m_device,
+			this->m_type,
+			this->m_renderDevice,
 			d3d12CommandList,
 			commandAllocator);
 	}
@@ -170,7 +174,7 @@ Microsoft::WRL::ComPtr<ID3D12CommandAllocator> CommandQueue::CreateCommandAlloca
 {
 	ComPtr<ID3D12CommandAllocator> commandAllocator;
 	ThrowIfFailed(
-		this->m_device->CreateCommandAllocator(this->m_type, IID_PPV_ARGS(&commandAllocator)));
+		this->m_renderDevice->GetD3DDevice()->CreateCommandAllocator(this->m_type, IID_PPV_ARGS(&commandAllocator)));
 
 	return commandAllocator;
 }
@@ -181,7 +185,7 @@ Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> CommandQueue::CreateCommandLi
 
 	ComPtr<ID3D12GraphicsCommandList2> commandList;
 	ThrowIfFailed(
-		this->m_device->CreateCommandList(
+		this->m_renderDevice->GetD3DDevice()->CreateCommandList(
 			0,
 			this->m_type,
 			commandAllocator,

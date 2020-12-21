@@ -14,13 +14,14 @@
 namespace Core
 {
 	class CommandList;
+	class Dx12RenderDevice;
 
 	// TODO: Should be non copyable
 	class CommandQueue
 	{
 	public:
 		CommandQueue(
-			Microsoft::WRL::ComPtr<ID3D12Device2> device,
+			std::shared_ptr<Dx12RenderDevice> renderDevice,
 			D3D12_COMMAND_LIST_TYPE type);
 
 		~CommandQueue();
@@ -53,7 +54,8 @@ namespace Core
 	private:
 		const D3D12_COMMAND_LIST_TYPE m_type;
 
-		Microsoft::WRL::ComPtr<ID3D12Device2> m_device;
+		std::shared_ptr<Dx12RenderDevice> m_renderDevice;
+
 		Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_commandQueue;
 		Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
 

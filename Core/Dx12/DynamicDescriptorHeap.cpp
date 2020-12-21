@@ -181,8 +181,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE Core::DynamicDescriptorHeap::CopyDescriptor(CommandL
     return hGPU;
 }
 
-/*
-void Core::DynamicDescriptorHeap::ParseRootSignature(const RootSignature& rootSignature)
+void Core::DynamicDescriptorHeap::ParseRootSignature(RootSignature const& rootSignature)
 {
     // If the root signature changes, all descriptors must be (re)bound to the
     // command list.
@@ -215,7 +214,7 @@ void Core::DynamicDescriptorHeap::ParseRootSignature(const RootSignature& rootSi
         currentOffset <= this->m_numDescriptorsPerHeap, 
         "The root signature requires more than the maximum number of descriptors per descriptor heap. Consider increasing the maximum number of descriptors per descriptor heap.");
 }
-*/
+
 Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> Core::DynamicDescriptorHeap::RequestDescriptorHeap()
 {
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap;
