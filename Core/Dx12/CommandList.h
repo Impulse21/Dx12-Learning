@@ -12,6 +12,7 @@
 #include "Dx12/UploadBuffer.h"
 #include "Dx12/GraphicResourceTypes.h"
 #include "Dx12/RootSignature.h"
+#include "RenderTarget.h"
 
 namespace Core
 {
@@ -75,6 +76,34 @@ namespace Core
 			buffer.SetDx12Resource(resource);
 		}
 
+		void CommandList::CopyResource(
+			Microsoft::WRL::ComPtr<ID3D12Resource> dstRes,
+			Microsoft::WRL::ComPtr<ID3D12Resource> srcRes);
+
+		void CommandList::CopyResource(Dx12Resrouce const& dstRes, Dx12Resrouce const& srcRes)
+		{
+			this->CopyResource(dstRes.GetDx12Resource(), srcRes.GetDx12Resource());
+		}
+
+		void CommandList::ResolveSubresource(
+			Dx12Resrouce const& dstRes,
+			Dx12Resrouce const& srcRes,
+			uint32_t dstSubresource = 0,
+			uint32_t srcSubresource = 0);
+
+		/**
+		* Clear depth/stencil texture.
+		*/
+		void ClearDepthStencilTexture(
+			Dx12Texture const& texture,
+			D3D12_CLEAR_FLAGS clearFlags,
+			float depth = 1.0f,
+			uint8_t stencil = 0);
+
+		void ClearRenderTarget(
+			Dx12Texture const& texture,
+			std::array<FLOAT, 4> clearColour);
+
 		void ClearRenderTarget(
 			Microsoft::WRL::ComPtr<ID3D12Resource> resource,
 			D3D12_CPU_DESCRIPTOR_HANDLE rtv,
@@ -85,6 +114,8 @@ namespace Core
 
 		void SetScissorRect(CD3DX12_RECT const& rect);
 		void SetScissorRects(std::vector<CD3DX12_RECT> const& rects);
+
+		void SetRenderTarget(RenderTarget const& renderTarget);
 
 		void SetRenderTarget(
 			Microsoft::WRL::ComPtr<ID3D12Resource> resource,
@@ -120,11 +151,34 @@ namespace Core
 		void SetPipelineState(Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState);
 
 		void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY topology);
+
 		void SetVertexBuffer(Dx12Buffer& vertexBuffer);
 		void SetVertexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_VERTEX_BUFFER_VIEW& vertexView);
+		/**
+		 * Set dynamic vertex buffer data to the rendering pipeline.
+		 */
+		void SetDynamicVertexBuffer(uint32_t slot, size_t numVertices, size_t vertexSize, const void* vertexBufferData);
+		template<typename T>
+		void SetDynamicVertexBuffer(uint32_t slot, const std::vector<T>& vertexBufferData)
+		{
+			this->SetDynamicVertexBuffer(slot, vertexBufferData.size(), sizeof(T), vertexBufferData.data());
+		}
 
 		void SetIndexBuffer(Dx12Buffer& indexBuffer);
 		void SetIndexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_INDEX_BUFFER_VIEW& indexView);
+
+		/**
+		 * Bind dynamic index buffer data to the rendering pipeline.
+		 */
+		void SetDynamicIndexBuffer(size_t numIndicies, DXGI_FORMAT indexFormat, const void* indexBufferData);
+		template<typename T>
+		void SetDynamicIndexBuffer(const std::vector<T>& indexBufferData)
+		{
+			static_assert(sizeof(T) == 2 || sizeof(T) == 4);
+
+			DXGI_FORMAT indexFormat = (sizeof(T) == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+			SetDynamicIndexBuffer(indexBufferData.size(), indexFormat, indexBufferData.data());
+		}
 
 		void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t startVertex = 0, uint32_t startInstance = 0);
 		void DrawIndexed(

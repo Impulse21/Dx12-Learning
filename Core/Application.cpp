@@ -36,11 +36,44 @@ void Core::Dx12Application::RunApplication()
 		// TODO: Sort out the game loop update functionality.
 		this->m_window->PullEvents();
 		this->Update(elapsedSeconds);
-		this->Render();
 
+		Dx12Texture sceneTexture(this->m_renderDevice);
+		this->RenderScene(sceneTexture);
+		
+		this->m_gui->NewFrame();
+		this->RenderUI();
+
+		// -- Process UI ---
+		auto commandQueue = this->m_renderDevice->GetQueue();
+		auto commandList = commandQueue->GetCommandList();
+
+		auto& backBuffer = this->m_swapChain->GetCurrentBackBuffer();
+		if (sceneTexture.GetDx12Resource())
+		{
+			if (sceneTexture.GetDx12Resource()->GetDesc().SampleDesc.Count > 1)
+			{
+				commandList->ResolveSubresource(backBuffer, sceneTexture);
+			}
+			else
+			{
+				commandList->CopyResource(backBuffer, sceneTexture);
+			}
+		}
+
+		RenderTarget uiRenderTarget;
+		uiRenderTarget.AttachTexture(Color0, backBuffer);
+
+		this->m_gui->Render(commandList, uiRenderTarget);
+
+		commandList->TransitionBarrier(backBuffer.GetDx12Resource(), D3D12_RESOURCE_STATE_PRESENT);
+		auto uiFence = commandQueue->ExecuteCommandList(commandList);
+		this->SetCurrentFrameFence(uiFence);
+
+		// Merge Render targets
 		this->m_swapChain->Present();
 
 		this->m_frameCounts[this->m_swapChain->GetCurrentBufferIndex()] = this->m_frameCount;
+		
 		this->m_renderDevice->ReleaseStaleDescriptors(this->m_frameCount);
 
 		// Wait on commandQueues before starting next frame
@@ -49,7 +82,6 @@ void Core::Dx12Application::RunApplication()
 
 	this->Shutdown();
 }
-
 
 void Core::Dx12Application::Ininitialize()
 {
@@ -64,6 +96,9 @@ void Core::Dx12Application::Ininitialize()
 		this->m_frameFences[i] = 0;
 		this->m_frameCounts[i] = 0;
 	}
+
+	this->m_gui = IUserInterface::Create();
+	this->m_gui->Initialize(this->m_renderDevice, this->m_window);
 }
 
 void Core::Dx12Application::Shutdown()
@@ -73,6 +108,10 @@ void Core::Dx12Application::Shutdown()
 	{
 		this->m_renderDevice->ReleaseStaleDescriptors(this->m_frameCounts[i]);
 	}
+}
+
+void Core::Dx12Application::EndFrame()
+{
 }
 
 void Core::Dx12Application::InitializeDx12()

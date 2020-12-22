@@ -42,6 +42,13 @@ namespace Core
 	class Dx12Resrouce
 	{
 	public:
+		Dx12Resrouce(const Dx12Resrouce& copy) = default;
+		Dx12Resrouce(Dx12Resrouce&& copy) = default;
+
+		Dx12Resrouce& operator=(const Dx12Resrouce& other) = default;
+		Dx12Resrouce& operator=(Dx12Resrouce&& other) = default;
+
+
 		virtual ~Dx12Resrouce() = default;
 
 		Microsoft::WRL::ComPtr<ID3D12Resource> GetDx12Resource() const { return this->m_d3dResouce; } 
@@ -72,6 +79,11 @@ namespace Core
 			: m_d3dResouce(resource)
 			, m_renderDevice(renderDevice)
 		{}
+
+		Dx12Resrouce(
+			std::shared_ptr<Dx12RenderDevice> renderDevice,
+			D3D12_RESOURCE_DESC const& resourceDesc,
+			const D3D12_CLEAR_VALUE* clearValue = nullptr);
 
 	protected:
 		Microsoft::WRL::ComPtr<ID3D12Resource> m_d3dResouce = nullptr;
@@ -129,30 +141,35 @@ namespace Core
 		BufferDesc m_bufferDesc;
 	};
 
-	struct TextureDesc
-	{
-		TextureUsage Usage = TextureUsage::Albedo;
-		BindFlags Binding = BindFlags::BIND_SHADER_RESOURCE;
-		D3D12_RESOURCE_DESC ResourceDesc = {};
-	};
-
 	class Dx12Texture : public Dx12Resrouce
 	{
 	public:
+		Dx12Texture() = default;
 		Dx12Texture(
 			std::shared_ptr<Dx12RenderDevice> renderDevice,
-			TextureDesc desc)
+			D3D12_RESOURCE_DESC const& resourceDesc,
+			const D3D12_CLEAR_VALUE* clearValue = nullptr)
+			: Dx12Resrouce(renderDevice, resourceDesc, clearValue)
+		{};
+
+		Dx12Texture(
+			std::shared_ptr<Dx12RenderDevice> renderDevice)
 			: Dx12Resrouce(renderDevice, nullptr)
-			, m_textureDesc(std::move(desc))
 		{};
 
 		Dx12Texture(
 			std::shared_ptr<Dx12RenderDevice> renderDevice,
-			TextureDesc desc,
 			Microsoft::WRL::ComPtr<ID3D12Resource> resource)
 			: Dx12Resrouce(renderDevice, resource)
-			, m_textureDesc(std::move(desc))
 		{}
+
+		Dx12Texture(const Dx12Texture& copy);
+		Dx12Texture(Dx12Texture&& copy);
+
+		Dx12Texture& operator=(const Dx12Texture& other);
+		Dx12Texture& operator=(Dx12Texture&& other);
+
+		void CreateViews();
 
 		/*
 		bool CheckSRVSupport()
@@ -182,18 +199,23 @@ namespace Core
 
 		D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView(const D3D12_UNORDERED_ACCESS_VIEW_DESC* uavDesc = nullptr) const override;
 
+		D3D12_CPU_DESCRIPTOR_HANDLE GetRenderTargetView() const;
+
+		D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilView() const;
+
 	private:
 		DescriptorAllocation CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc) const;
 		DescriptorAllocation CreateUnorderedAccessView(const D3D12_UNORDERED_ACCESS_VIEW_DESC* uavDesc) const;
 
 	private:
-		TextureDesc m_textureDesc;
-
 		mutable std::unordered_map<size_t, DescriptorAllocation> m_shaderResourceViews;
 		mutable std::unordered_map<size_t, DescriptorAllocation> m_unorderedAccessViews;
 
 		mutable std::mutex m_shaderResourceViewsMutex;
 		mutable std::mutex m_unorderedAccessViewsMutex;
+
+		DescriptorAllocation m_renderTargetView;
+		DescriptorAllocation m_depthStencilView;
 	};
 }
 

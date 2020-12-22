@@ -22,6 +22,8 @@
 #include "Dx12/CommandList.h"
 #include "Dx12/GraphicResourceTypes.h"
 
+#include "UserInterface.h"
+
 // -- STL ---
 #include <memory>
 
@@ -38,28 +40,19 @@ namespace Core
 	protected:
 		virtual void LoadContent() {};
 		virtual void Update(double deltaTime) {};
-		virtual void Render() {};
-
+		virtual void RenderScene(Dx12Texture& sceneTexture) {};
+		virtual void RenderUI() {};
 
 		void SetCurrentFrameFence(uint64_t fenceValue)
 		{
 			this->m_frameFences[this->m_swapChain->GetCurrentBufferIndex()] = fenceValue;
 		}
 
-		// -- Potential Render Device functions ---
-	protected:
-		void UploadBufferResource(
-			ID3D12GraphicsCommandList2* commandList,
-			ID3D12Resource** pDestinationResource,
-			ID3D12Resource** pIntermediateResource,
-			size_t numOfElements,
-			size_t elementStride,
-			const void* data,
-			D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
-
 	private:
 		void Ininitialize();
 		void Shutdown();
+
+		void EndFrame();
 
 	private:
 		void InitializeDx12();
@@ -72,6 +65,8 @@ namespace Core
 
 		std::shared_ptr<Dx12RenderDevice> m_renderDevice;
 		std::unique_ptr<SwapChain> m_swapChain;
+
+		std::unique_ptr<IUserInterface> m_gui = nullptr;
 
 		// -- Frame resources ---
 		std::vector<uint64_t> m_frameFences;

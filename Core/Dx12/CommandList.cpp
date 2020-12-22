@@ -122,6 +122,7 @@ void Core::CommandList::LoadTextureFromFile(Dx12Texture& texture, std::wstring c
 	if (iter != ms_textureCache.end())
 	{
 		texture.SetDx12Resource(iter->second);
+		texture.CreateViews();
 		return;
 	}
 
@@ -209,6 +210,7 @@ void Core::CommandList::LoadTextureFromFile(Dx12Texture& texture, std::wstring c
 	SetD3DDebugName(textureResource, L"Texture");
 
 	texture.SetDx12Resource(textureResource);
+	texture.CreateViews();
 	ResourceStateTracker::AddGlobalResourceState(
 		textureResource.Get(),
 		D3D12_RESOURCE_STATE_COMMON);
@@ -384,6 +386,60 @@ void Core::CommandList::CopyBuffer(
 	this->TrackResource(buffer);
 }
 
+void Core::CommandList::CopyResource(Microsoft::WRL::ComPtr<ID3D12Resource> dstRes, Microsoft::WRL::ComPtr<ID3D12Resource> srcRes)
+{
+	this->TransitionBarrier(dstRes, D3D12_RESOURCE_STATE_COPY_DEST);
+	this->TransitionBarrier(srcRes, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+	this->FlushResourceBarriers();
+
+	this->m_commandList->CopyResource(dstRes.Get(), srcRes.Get());
+
+	this->TrackResource(dstRes);
+	this->TrackResource(srcRes);
+}
+
+void Core::CommandList::ResolveSubresource(
+	Dx12Resrouce const& dstRes,
+	Dx12Resrouce const& srcRes,
+	uint32_t dstSubresource,
+	uint32_t srcSubresource)
+{
+	this->TransitionBarrier(dstRes.GetDx12Resource(), D3D12_RESOURCE_STATE_RESOLVE_DEST, dstSubresource);
+	this->TransitionBarrier(srcRes.GetDx12Resource(), D3D12_RESOURCE_STATE_RESOLVE_SOURCE, srcSubresource);
+
+	this->FlushResourceBarriers();
+
+	this->m_commandList->ResolveSubresource(
+		dstRes.GetDx12Resource().Get(),
+		dstSubresource,
+		srcRes.GetDx12Resource().Get(),
+		srcSubresource,
+		dstRes.GetDx12Resource()->GetDesc().Format);
+
+	TrackResource(srcRes.GetDx12Resource());
+	TrackResource(dstRes.GetDx12Resource());
+}
+
+void Core::CommandList::ClearDepthStencilTexture(Dx12Texture const& texture, D3D12_CLEAR_FLAGS clearFlags, float depth, uint8_t stencil)
+{
+	this->TransitionBarrier(texture.GetDx12Resource(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	this->m_commandList->ClearDepthStencilView(
+		texture.GetDepthStencilView(),
+		clearFlags,
+		depth,
+		stencil,
+		0,
+		nullptr);
+
+	this->TrackResource(texture.GetDx12Resource());
+}
+
+void Core::CommandList::ClearRenderTarget(Dx12Texture const& texture, std::array<FLOAT, 4> clearColour)
+{
+	this->ClearRenderTarget(texture.GetDx12Resource(), texture.GetRenderTargetView(), clearColour);
+}
+
 void Core::CommandList::ClearRenderTarget(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_CPU_DESCRIPTOR_HANDLE rtv, std::array<FLOAT, 4> clearColour)
 {
 	this->TransitionBarrier(resource, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -421,6 +477,45 @@ void Core::CommandList::SetScissorRects(std::vector<CD3DX12_RECT> const& rects)
 	this->m_commandList->RSSetScissorRects(
 		static_cast<UINT>(rects.size()),
 		rects.data());
+}
+
+void Core::CommandList::SetRenderTarget(RenderTarget const& renderTarget)
+{
+	std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> renderTargetDescriptors;
+	renderTargetDescriptors.reserve(AttachmentPoint::NumAttachmentPoints);
+	const auto& textures = renderTarget.GetTextures();
+
+	// Bind color targets (max of 8 render targets can be bound to the rendering pipeline.
+	for (int i = 0; i < 8; ++i)
+	{
+		auto& texture = textures[i];
+
+		if (texture.GetDx12Resource())
+		{
+			TransitionBarrier(texture.GetDx12Resource(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+			renderTargetDescriptors.push_back(texture.GetRenderTargetView());
+
+			TrackResource(texture.GetDx12Resource());
+		}
+	}
+
+	const auto& depthTexture = renderTarget.GetTexture(AttachmentPoint::DepthStencil);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE depthStencilDescriptor(D3D12_DEFAULT);
+	if (depthTexture.GetDx12Resource())
+	{
+		TransitionBarrier(depthTexture.GetDx12Resource(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		depthStencilDescriptor = depthTexture.GetDepthStencilView();
+
+		TrackResource(depthTexture.GetDx12Resource());
+	}
+
+	D3D12_CPU_DESCRIPTOR_HANDLE* pDSV = depthStencilDescriptor.ptr != 0 ? &depthStencilDescriptor : nullptr;
+
+	this->m_commandList->OMSetRenderTargets(
+		static_cast<UINT>(renderTargetDescriptors.size()),
+		renderTargetDescriptors.data(),
+		FALSE,
+		pDSV);
 }
 
 void Core::CommandList::SetRenderTarget(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_CPU_DESCRIPTOR_HANDLE& rtv)
@@ -526,6 +621,20 @@ void Core::CommandList::SetVertexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> r
 	this->TrackResource(resource);
 }
 
+void Core::CommandList::SetDynamicVertexBuffer(uint32_t slot, size_t numVertices, size_t vertexSize, const void* vertexBufferData)
+{
+	size_t bufferSize = numVertices * vertexSize;
+	auto heapAllocation = this->m_uploadBuffer->Allocate(bufferSize, vertexSize);
+	memcpy(heapAllocation.Cpu, vertexBufferData, bufferSize);
+
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
+	vertexBufferView.BufferLocation = heapAllocation.Gpu;
+	vertexBufferView.SizeInBytes = static_cast<UINT>(bufferSize);
+	vertexBufferView.StrideInBytes = static_cast<UINT>(vertexSize);
+
+	this->m_commandList->IASetVertexBuffers(slot, 1, &vertexBufferView);
+}
+
 void Core::CommandList::SetIndexBuffer(Dx12Buffer& indexBuffer)
 {
 	LOG_CORE_ASSERT(indexBuffer.GetBindings() & BIND_INDEX_BUFFER, "Unable to bind non index buffer");
@@ -548,6 +657,22 @@ void Core::CommandList::SetIndexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> re
 	this->m_commandList->IASetIndexBuffer(&indexView);
 
 	this->TrackResource(resource);
+}
+
+void Core::CommandList::SetDynamicIndexBuffer(size_t numIndicies, DXGI_FORMAT indexFormat, const void* indexBufferData)
+{
+	size_t indexSizeInBytes = indexFormat == DXGI_FORMAT_R16_UINT ? 2 : 4;
+	size_t bufferSize = numIndicies * indexSizeInBytes;
+
+	auto heapAllocation = this->m_uploadBuffer->Allocate(bufferSize, indexSizeInBytes);
+	memcpy(heapAllocation.Cpu, indexBufferData, bufferSize);
+
+	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
+	indexBufferView.BufferLocation = heapAllocation.Gpu;
+	indexBufferView.SizeInBytes = static_cast<UINT>(bufferSize);
+	indexBufferView.Format = indexFormat;
+
+	this->m_commandList->IASetIndexBuffer(&indexBufferView);
 }
 
 void Core::CommandList::Draw(

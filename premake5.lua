@@ -76,6 +76,7 @@ group "Core"
 			"ThridParty/spdlog/include",
 			
 			"ThridParty/glfw/include",
+			"ThridParty/imgui",
 			"ThridParty/DirectXTex"
 		}
 
@@ -86,6 +87,7 @@ group "Core"
 			"dxguid.lib",
 			"GLFW",
 			"DirectXTex",
+			"Imgui"
 			-- "3rdParty/dxc_2020_10-22/lib/dxcompiler.lib"
 		}
 
@@ -203,6 +205,35 @@ group "UnitTests"
 			"dxguid.lib",
 		}
 
+	project "ImguiTest"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+		
+		files
+		{
+			"UnitTests/ImguiTest/**.h",
+			"UnitTests/ImguiTest/**.cpp",
+		}
+
+		includedirs
+		{
+			"UnitTests/ImguiTest",
+			"Core",
+			
+			"ThridParty/spdlog/include",
+			"ThridParty/imgui",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"Imgui",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
 	-- TODO
 	-- Structured Buffer FromComput Shader
 	-- Depth Test

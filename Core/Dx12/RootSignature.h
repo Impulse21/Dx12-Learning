@@ -4,6 +4,7 @@
 #include <wrl.h>
 #include <vector>
 #include <string>
+
 namespace Core
 {
 	class Dx12RenderDevice;

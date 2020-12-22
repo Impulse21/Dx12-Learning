@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "DescriptorHeap.h"
+#include "GraphicResourceTypes.h"
 
 namespace Core
 {
@@ -24,9 +25,14 @@ namespace Core
 		void Present();
 
 		int GetCurrentBufferIndex() const { return this->m_currBufferIndex; }
-		Microsoft::WRL::ComPtr<ID3D12Resource> GetCurrentBackBuffer()
+		const Dx12Texture& GetCurrentBackBuffer()
 		{ 
 			return this->m_backBuffers[this->GetCurrentBufferIndex()];
+		}
+
+		Microsoft::WRL::ComPtr<ID3D12Resource> GetCurrentBackBufferResource()
+		{
+			return this->m_backBuffers[this->GetCurrentBufferIndex()].GetDx12Resource();
 		}
 
 		DXGI_FORMAT GetFormat() const { return this->Format; }
@@ -44,7 +50,7 @@ namespace Core
 		const DXGI_FORMAT Format;
 		int m_currBufferIndex;
 
-		std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_backBuffers;
+		std::vector<Dx12Texture> m_backBuffers;
 
 		Microsoft::WRL::ComPtr<IDXGISwapChain4> m_swapChain;
 		std::shared_ptr<DescriptorHeap> m_rtvHeap;

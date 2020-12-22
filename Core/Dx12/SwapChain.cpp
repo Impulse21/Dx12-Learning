@@ -29,15 +29,16 @@ Core::SwapChain::SwapChain(
 		ThrowIfFailed(
 			swapChain->GetBuffer(i, IID_PPV_ARGS(&backBuffer)));
 
-		// Alloca
-		auto rtvHandle = this->m_rtvHeap->GetCpuHandle(i);
-		renderDevice->GetD3DDevice()->CreateRenderTargetView(backBuffer.Get(), nullptr, rtvHandle);
 
 		ResourceStateTracker::AddGlobalResourceState(backBuffer.Get(), D3D12_RESOURCE_STATE_COMMON);
-
 		std::wstring name = std::wstring(L"Back Buffer ") + std::to_wstring(i);
 		backBuffer->SetName(name.c_str());
-		this->m_backBuffers[i] = backBuffer;
+
+		this->m_backBuffers[i] = Dx12Texture(renderDevice, backBuffer);
+		this->m_backBuffers[i].CreateViews();
+
+		auto rtvHandle = this->m_rtvHeap->GetCpuHandle(i);
+		renderDevice->GetD3DDevice()->CreateRenderTargetView(backBuffer.Get(), nullptr, rtvHandle);
 	}
 }
 

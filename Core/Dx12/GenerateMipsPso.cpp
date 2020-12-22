@@ -45,8 +45,7 @@ GenerateMipsPso::GenerateMipsPso(std::shared_ptr<Dx12RenderDevice> renderDevice)
 
 	this->m_rootSignature.SetRootSignatureDesc(
 		rootSignatureDesc.Desc_1_1,
-		featureData.HighestVersion
-	);
+		featureData.HighestVersion);
 
 	// Create the PSO for GenerateMips shader.
 	struct PipelineStateStream

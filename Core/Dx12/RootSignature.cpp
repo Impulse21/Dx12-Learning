@@ -78,86 +78,85 @@ void Core::RootSignature::SetRootSignatureDesc(
 		const D3D12_ROOT_PARAMETER1& rootParameter = rootSignatureDesc.pParameters[i];
 		parameters[i] = rootParameter;
 
-        if (rootParameter.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
-        {
-            UINT numDescriptorRanges = rootParameter.DescriptorTable.NumDescriptorRanges;
-            D3D12_DESCRIPTOR_RANGE1* pDescriptorRanges = numDescriptorRanges > 0 ? new D3D12_DESCRIPTOR_RANGE1[numDescriptorRanges] : nullptr;
+		if (rootParameter.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
+		{
+			UINT numDescriptorRanges = rootParameter.DescriptorTable.NumDescriptorRanges;
+			D3D12_DESCRIPTOR_RANGE1* pDescriptorRanges = numDescriptorRanges > 0 ? new D3D12_DESCRIPTOR_RANGE1[numDescriptorRanges] : nullptr;
 
-            std::memcpy(
-                pDescriptorRanges, 
-                rootParameter.DescriptorTable.pDescriptorRanges,
-                sizeof(D3D12_DESCRIPTOR_RANGE1) * numDescriptorRanges);
+			std::memcpy(
+				pDescriptorRanges,
+				rootParameter.DescriptorTable.pDescriptorRanges,
+				sizeof(D3D12_DESCRIPTOR_RANGE1) * numDescriptorRanges);
 
-            parameters[i].DescriptorTable.NumDescriptorRanges = numDescriptorRanges;
-            parameters[i].DescriptorTable.pDescriptorRanges = pDescriptorRanges;
+			parameters[i].DescriptorTable.NumDescriptorRanges = numDescriptorRanges;
+			parameters[i].DescriptorTable.pDescriptorRanges = pDescriptorRanges;
 
-            // Set the bit mask depending on the type of descriptor table.
-            if (numDescriptorRanges > 0)
-            {
-                switch (pDescriptorRanges[0].RangeType)
-                {
-                case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-                case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-                case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-                    this->m_descriptorTableBitMask |= (1 << i);
-                    break;
-                case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-                    this->m_samplerTableBitMask |= (1 << i);
-                    break;
-                }
-            }
+			// Set the bit mask depending on the type of descriptor table.
+			if (numDescriptorRanges > 0)
+			{
+				switch (pDescriptorRanges[0].RangeType)
+				{
+				case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+				case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+				case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+					this->m_descriptorTableBitMask |= (1 << i);
+					break;
+				case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
+					this->m_samplerTableBitMask |= (1 << i);
+					break;
+				}
+			}
 
-            // Count the number of descriptors in the descriptor table.
-            for (UINT j = 0; j < numDescriptorRanges; ++j)
-            {
-                this->m_numDescriptorsPerTable[i] += pDescriptorRanges[j].NumDescriptors;
-            }
-        }
+			// Count the number of descriptors in the descriptor table.
+			for (UINT j = 0; j < numDescriptorRanges; ++j)
+			{
+				this->m_numDescriptorsPerTable[i] += pDescriptorRanges[j].NumDescriptors;
+			}
+		}
+	}
+	this->m_rootSignatureDesc.NumParameters = numParameters;
+	this->m_rootSignatureDesc.pParameters = parameters;
 
-        this->m_rootSignatureDesc.NumParameters = numParameters;
-        this->m_rootSignatureDesc.pParameters = parameters;
+	UINT numStaticSamplers = rootSignatureDesc.NumStaticSamplers;
+	D3D12_STATIC_SAMPLER_DESC* pStaticSamplers = numStaticSamplers > 0 ? new D3D12_STATIC_SAMPLER_DESC[numStaticSamplers] : nullptr;
 
-        UINT numStaticSamplers = rootSignatureDesc.NumStaticSamplers;
-        D3D12_STATIC_SAMPLER_DESC* pStaticSamplers = numStaticSamplers > 0 ? new D3D12_STATIC_SAMPLER_DESC[numStaticSamplers] : nullptr;
+	if (pStaticSamplers)
+	{
+		memcpy(pStaticSamplers, rootSignatureDesc.pStaticSamplers,
+			sizeof(D3D12_STATIC_SAMPLER_DESC) * numStaticSamplers);
+	}
 
-        if (pStaticSamplers)
-        {
-            memcpy(pStaticSamplers, rootSignatureDesc.pStaticSamplers,
-                sizeof(D3D12_STATIC_SAMPLER_DESC) * numStaticSamplers);
-        }
+	this->m_rootSignatureDesc.NumStaticSamplers = numStaticSamplers;
+	this->m_rootSignatureDesc.pStaticSamplers = pStaticSamplers;
 
-        this->m_rootSignatureDesc.NumStaticSamplers = numStaticSamplers;
-        this->m_rootSignatureDesc.pStaticSamplers = pStaticSamplers;
+	D3D12_ROOT_SIGNATURE_FLAGS flags = rootSignatureDesc.Flags;
+	this->m_rootSignatureDesc.Flags = flags;
 
-        D3D12_ROOT_SIGNATURE_FLAGS flags = rootSignatureDesc.Flags;
-        this->m_rootSignatureDesc.Flags = flags;
+	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC versionRootSignatureDesc;
+	versionRootSignatureDesc.Init_1_1(numParameters, parameters, numStaticSamplers, pStaticSamplers, flags);
 
-        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC versionRootSignatureDesc;
-        versionRootSignatureDesc.Init_1_1(numParameters, parameters, numStaticSamplers, pStaticSamplers, flags);
+	// Serialize the root signature.
+	Microsoft::WRL::ComPtr<ID3DBlob> rootSignatureBlob;
+	Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+	ThrowIfFailed(
+		D3DX12SerializeVersionedRootSignature(
+			&versionRootSignatureDesc,
+			rootSignatureVersion,
+			&rootSignatureBlob,
+			&errorBlob));
 
-        // Serialize the root signature.
-        Microsoft::WRL::ComPtr<ID3DBlob> rootSignatureBlob;
-        Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
-        ThrowIfFailed(
-            D3DX12SerializeVersionedRootSignature(
-                &versionRootSignatureDesc,
-                rootSignatureVersion,
-                &rootSignatureBlob,
-                &errorBlob));
+	// Create the root signature.
+	ThrowIfFailed(
+		this->m_renderDevice->GetD3DDevice()->CreateRootSignature(
+			0,
+			rootSignatureBlob->GetBufferPointer(),
+			rootSignatureBlob->GetBufferSize(),
+			IID_PPV_ARGS(&this->m_rootSignature)));
 
-        // Create the root signature.
-        ThrowIfFailed(
-            this->m_renderDevice->GetD3DDevice()->CreateRootSignature(
-                0,
-                rootSignatureBlob->GetBufferPointer(),
-                rootSignatureBlob->GetBufferSize(),
-                IID_PPV_ARGS(&this->m_rootSignature)));
-
-        if (this->m_debugName != L"")
-        {
-            ThrowIfFailed(
-                this->m_rootSignature->SetName(this->m_debugName.c_str()));
-        }
+	if (this->m_debugName != L"")
+	{
+		ThrowIfFailed(
+			this->m_rootSignature->SetName(this->m_debugName.c_str()));
 	}
 }
 
