@@ -234,6 +234,38 @@ group "UnitTests"
 			"dxgi.lib",
 			"dxguid.lib",
 		}
+
+		
+	project "ModelTest"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+		
+		files
+		{
+			"UnitTests/ModelTest/**.h",
+			"UnitTests/ModelTest/**.cpp",
+		}
+
+		includedirs
+		{
+			"UnitTests/ModelTest",
+			"Core",
+
+			"ThridParty/spdlog/include",
+			"ThridParty/imgui",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"Imgui",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
+	
 	-- TODO
 	-- Structured Buffer FromComput Shader
 	-- Depth Test

@@ -16,34 +16,50 @@
 
 #include "imgui.h"
 
+#include "Mesh.h"
+#include "Camera.h"
+
+#include "Material.h"
+
 namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
-
-
-struct VertexPosTex
-{
-    XMFLOAT3 Position;
-    XMFLOAT2 Colour;
-};
-
-static std::vector<VertexPosTex> gVertices =
-{
-    { XMFLOAT3(-1.0f, -1.0f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
-    { XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT2(0.5f, 0.0f) },
-    { XMFLOAT3(1.0f, -1.0f, 0.0f), XMFLOAT2(1.0f, 1.0f) }
-};
-
-static std::vector<uint16_t> gIndices = { 0, 1, 2 };
 
 namespace RootParameters
 {
     enum
     {
+        MatricesCB,
+        MaterialCB,
+        DirectionLightCB,
         Textures,
         NumRootParameters,
     };
 }
+
+struct Matrices
+{
+    XMMATRIX ModelMatrix;
+    XMMATRIX ModelViewMatrix;
+    XMMATRIX InverseTransposeModelViewMatrix;
+    XMMATRIX ModelViewProjectionMatrix;
+};
+
+struct DirectionLight
+{
+    XMFLOAT4 AmbientColour = { 0.15f, 0.15f, 0.15f, 1.0f };
+    XMFLOAT3 Direction = { 0.0f, -1.0f, 1.0f };
+    float padding = 0.0f;
+};
+
+void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX viewProjection, Matrices& mat)
+{
+    mat.ModelMatrix = model;
+    mat.ModelViewMatrix = model * view;
+    mat.InverseTransposeModelViewMatrix = XMMatrixTranspose(XMMatrixInverse(nullptr, mat.ModelViewMatrix));
+    mat.ModelViewProjectionMatrix = model * viewProjection;
+}
+
 class ModelTestApp : public Dx12Application
 {
 public:
@@ -62,17 +78,17 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
     std::unique_ptr<RootSignature> m_rootSignature;
 
-    // Vertex buffer for the cube.
-    std::unique_ptr<Dx12Buffer> m_vertexBuffer = nullptr;
-
-    // Index buffer for the cube.
-    std::unique_ptr<Dx12Buffer> m_indexBuffer = nullptr;
-
+    std::unique_ptr<Mesh> m_cubeMesh;
     // Index buffer for the cube.
     std::unique_ptr<Dx12Texture> m_texture = nullptr;
 
     RenderTarget m_sceneRenderTarget;
     std::array<FLOAT, 4> m_clearValue = { 0.4f, 0.6f, 0.9f, 1.0f };
+    Camera m_camera;
+
+    Material m_material;
+
+    DirectionLight m_directionLighting;
 };
 
 CREATE_APPLICATION(ModelTestApp)
@@ -83,6 +99,17 @@ ModelTestApp::ModelTestApp()
 
 void ModelTestApp::LoadContent()
 {
+    // -- Set up camera data ---
+    XMVECTOR cameraPos = XMVectorSet(0, 5, -5, 1);
+    XMVECTOR cameraTarget = XMVectorSet(0, 0, 0, 1);
+    XMVECTOR cameraUp = XMVectorSet(0, 1, 0, 0);
+
+    this->m_camera.SetLookAt(cameraPos, cameraTarget, cameraUp);
+
+    float aspectRatio = this->m_window->GetWidth() / static_cast<float>(this->m_window->GetHeight());
+    this->m_camera.SetProjection(45.0f, aspectRatio, 0.1f, 100.0f);
+
+    // -- Upload data to the gpu ---
     auto copyQueue = this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COPY);
     auto uploadCmdList = copyQueue->GetCommandList();
 
@@ -136,33 +163,7 @@ void ModelTestApp::LoadContent()
         this->m_sceneRenderTarget.AttachTexture(AttachmentPoint::DepthStencil, depthTexture);
     }
 
-    {
-        BufferDesc desc = {};
-        desc.Usage = BufferUsage::Static;
-        desc.BindFlags = BIND_VERTEX_BUFFER;
-        desc.ElementByteStride = sizeof(VertexPosTex);
-        desc.NumElements = gVertices.size();
-
-        this->m_vertexBuffer = std::make_unique<Dx12Buffer>(this->m_renderDevice, desc);
-
-        uploadCmdList->CopyBuffer<VertexPosTex>(
-            *this->m_vertexBuffer,
-            gVertices);
-    }
-
-    {
-        BufferDesc desc = {};
-        desc.Usage = BufferUsage::Static;
-        desc.BindFlags = BIND_INDEX_BUFFER;
-        desc.ElementByteStride = sizeof(uint16_t);
-        desc.NumElements = gIndices.size();
-
-        this->m_indexBuffer = std::make_unique<Dx12Buffer>(this->m_renderDevice, desc);
-
-        uploadCmdList->CopyBuffer<uint16_t>(
-            *this->m_indexBuffer,
-            gIndices);
-    }
+    this->m_cubeMesh = MeshPrefabs::CreateCube(this->m_renderDevice, *uploadCmdList);
 
 	{
         this->m_texture = std::make_unique<Dx12Texture>(this->m_renderDevice);
@@ -206,13 +207,23 @@ void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
     commandList->SetGraphicsRootSignature(*this->m_rootSignature);
     commandList->SetPipelineState(this->m_pso);
 
+    // Set Matrix data
+    XMMATRIX translationMatrix = XMMatrixTranslation(0.0f, 0.0f, 0.0f);
+    XMMATRIX rotationMatrix = XMMatrixIdentity();
+    XMMATRIX scaleMatrix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
+    XMMATRIX worldMatrix = scaleMatrix * rotationMatrix * translationMatrix;
+    XMMATRIX viewMatrix = this->m_camera.GetViewMatrix();
+    XMMATRIX viewProjectionMatrix = viewMatrix * this->m_camera.GetProjectionMatrix();
+
+    Matrices matrices;
+    ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
+    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
+    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
+    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionLightCB, this->m_directionLighting);
+
     commandList->SetShaderResourceView(RootParameters::Textures, 0, *this->m_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-    commandList->SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->SetVertexBuffer(*this->m_vertexBuffer);
-    commandList->SetIndexBuffer(*this->m_indexBuffer);
-
-    commandList->DrawIndexed(gIndices.size(), 1, 0, 0, 0);
+    this->m_cubeMesh->Draw(*commandList);
 
     this->m_renderDevice->GetQueue()->ExecuteCommandList(commandList);
     sceneTexture.SetDx12Resource(this->m_sceneRenderTarget.GetTexture(Color0).GetDx12Resource());
@@ -220,7 +231,24 @@ void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
 
 void ModelTestApp::RenderUI()
 {
-    ImGui::ShowDemoWindow();
+    static bool showWindow = true;
+    ImGui::Begin("Shader Parameters", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImGui::CollapsingHeader("Direction Lighting");
+
+    ImGui::ColorEdit3("Colour", reinterpret_cast<float*>(&this->m_directionLighting.AmbientColour));
+
+    ImGui::DragFloat3("Direction", reinterpret_cast<float*>(&this->m_directionLighting.Direction), 0.01f, -1.0f, 1.0f);
+
+    ImGui::NewLine();
+
+    ImGui::CollapsingHeader("Material Info");
+
+    // color picker
+    ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
+
+    ImGui::End();
+
 }
 
 void ModelTestApp::CreatePipelineStateObjects()
@@ -243,6 +271,9 @@ void ModelTestApp::CreatePipelineStateObjects()
 	CD3DX12_DESCRIPTOR_RANGE1 descriptorRage(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
 	CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
+    rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::DirectionLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
 	rootParameters[RootParameters::Textures].InitAsDescriptorTable(1, &descriptorRage, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
@@ -260,30 +291,45 @@ void ModelTestApp::CreatePipelineStateObjects()
 		rootSignatureDescription.Desc_1_1,
 		featureData.HighestVersion);
 
-    // Create the vertex input layout
-    std::vector<D3D12_INPUT_ELEMENT_DESC> inputLayout = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    };
+    // Setup the pipeline state.
+    struct PipelineStateStream
+    {
+        CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE pRootSignature;
+        CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT InputLayout;
+        CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY PrimitiveTopologyType;
+        CD3DX12_PIPELINE_STATE_STREAM_VS VS;
+        CD3DX12_PIPELINE_STATE_STREAM_PS PS;
+        CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT DSVFormat;
+        CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS RTVFormats;
+    } pipelineStateStream;
 
-    PipelineStateBuilder builder;
-    builder.SetInputElementDesc(inputLayout);
-    builder.SetRootSignature(this->m_rootSignature->GetRootSignature().Get());
+
     std::string baseAssetPath(fs::current_path().u8string());
-
     std::vector<char> vertexByteData;
-    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + "TexturedTriVS.cso", vertexByteData);
+    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + "ModelVS.cso", vertexByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Vertex Shader");
 
-    builder.SetVertexShader(vertexByteData);
 
     std::vector<char> pixelByteData;
-    success = BinaryReader::ReadFile(baseAssetPath + "\\" + "TexturedTriPS.cso", pixelByteData);
+    success = BinaryReader::ReadFile(baseAssetPath + "\\" + "ModelPS.cso", pixelByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Pixel Shader");
-    builder.SetPixelShader(pixelByteData);
 
-    builder.SetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-    builder.SetRenderTargetFormat(this->m_swapChain->GetFormat());
+    pipelineStateStream.pRootSignature = this->m_rootSignature->GetRootSignature().Get();
+    pipelineStateStream.InputLayout = { VertexPositionNormalTexture::InputElements, VertexPositionNormalTexture::InputElementCount };
+    pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexByteData.data(), vertexByteData.size());
+    pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelByteData.data(), pixelByteData.size());
+    pipelineStateStream.DSVFormat = this->m_sceneRenderTarget.GetDepthStencilFormat();
+    pipelineStateStream.RTVFormats = this->m_sceneRenderTarget.GetRenderTargetForamts();
 
-    this->m_pso = builder.Build(this->m_renderDevice->GetD3DDevice().Get(), L"Pipeline state");
+
+    D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc =
+    {
+        sizeof(PipelineStateStream), &pipelineStateStream
+    };
+
+    ThrowIfFailed(
+        this->m_renderDevice->GetD3DDevice()->CreatePipelineState(
+            &pipelineStateStreamDesc,
+            IID_PPV_ARGS(&this->m_pso)));
 }

@@ -132,6 +132,17 @@ namespace Core
 			this->SetGraphics32BitConstants(rootParameterIndex, sizeof(T) / sizeof(uint32_t), &constants);
 		}
 
+		/**
+		 * Set a dynamic constant buffer data to an inline descriptor in the root
+		 * signature.
+		 */
+		void SetGraphicsDynamicConstantBuffer(uint32_t rootParameterIndex, size_t sizeInBytes, const void* bufferData);
+		template<typename T>
+		void SetGraphicsDynamicConstantBuffer(uint32_t rootParameterIndex, const T& data)
+		{
+			this->SetGraphicsDynamicConstantBuffer(rootParameterIndex, sizeof(T), &data);
+		}
+
 		void SetGraphicsRootShaderResourceView(uint32_t rootParameterIndex, Microsoft::WRL::ComPtr<ID3D12Resource> resource);
 		void SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
@@ -154,6 +165,7 @@ namespace Core
 
 		void SetVertexBuffer(Dx12Buffer& vertexBuffer);
 		void SetVertexBuffer(Microsoft::WRL::ComPtr<ID3D12Resource> resource, D3D12_VERTEX_BUFFER_VIEW& vertexView);
+
 		/**
 		 * Set dynamic vertex buffer data to the rendering pipeline.
 		 */

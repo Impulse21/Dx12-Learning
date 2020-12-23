@@ -65,6 +65,9 @@ public:
 		glfwPollEvents();
 	}
 
+
+	void* GetWindowImpl() override { return (void*)this->m_window; }
+
 public:
 	bool IsClosing() const override final { return this->m_windowState.IsClosing; }
 	bool IsMinimized() const override final { return false; }

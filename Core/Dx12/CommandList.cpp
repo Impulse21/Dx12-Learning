@@ -531,6 +531,15 @@ void Core::CommandList::SetGraphics32BitConstants(uint32_t rootParameterIndex, u
 	this->m_commandList->SetGraphicsRoot32BitConstants(rootParameterIndex, numConstants, constants, 0);
 }
 
+void Core::CommandList::SetGraphicsDynamicConstantBuffer(uint32_t rootParameterIndex, size_t sizeInBytes, const void* bufferData)
+{
+	// Constant buffers must be 256-byte aligned.
+	auto heapAllococation = this->m_uploadBuffer->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+	memcpy(heapAllococation.Cpu, bufferData, sizeInBytes);
+
+	this->m_commandList->SetGraphicsRootConstantBufferView(rootParameterIndex, heapAllococation.Gpu);
+}
+
 void Core::CommandList::SetGraphicsRootShaderResourceView(
 	uint32_t rootParameterIndex,
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource)

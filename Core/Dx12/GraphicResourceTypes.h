@@ -108,6 +108,7 @@ namespace Core
 	class Dx12Buffer : public Dx12Resrouce
 	{
 	public:
+		Dx12Buffer() = default;
 		Dx12Buffer(
 			std::shared_ptr<Dx12RenderDevice> renderDevice,
 			BufferDesc desc)

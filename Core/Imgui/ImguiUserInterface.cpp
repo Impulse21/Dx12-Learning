@@ -3,7 +3,7 @@
 
 #include "Window.h"
 
-#include "Imgui/imgui_impl_win32.h"
+#include "Imgui/imgui_impl_glfw.h"
 #include "Dx12/Dx12RenderDevice.h"
 #include "Dx12/CommandList.h"
 
@@ -40,14 +40,15 @@ bool Core::ImguiUserInterface::Initialize(
 	this->m_imguiContext = ImGui::CreateContext();
 	ImGui::SetCurrentContext(this->m_imguiContext);
 
-	if (!this->m_renderDevice || !ImGui_ImplWin32_Init(this->m_window->GetNativeHandle()))
+    GLFWwindow* glfwWindow = static_cast<GLFWwindow*>(window->GetWindowImpl());
+	if (!this->m_renderDevice || !ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow*>(glfwWindow), false))
 	{
 		LOG_CORE_ERROR("Failed to initalize IMGUI Window");
 		return false;
 	}
 
 	ImGuiIO& io = ImGui::GetIO();
-	io.FontAllowUserScaling = false;
+	io.FontAllowUserScaling = true;
 
 	unsigned char* pixelData = nullptr;
 	int width;
@@ -88,7 +89,7 @@ bool Core::ImguiUserInterface::Initialize(
 void Core::ImguiUserInterface::NewFrame()
 {
     ImGui::SetCurrentContext(this->m_imguiContext);
-    ImGui_ImplWin32_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 }
 
@@ -181,13 +182,15 @@ void Core::ImguiUserInterface::Render(std::shared_ptr<CommandList> commandList, 
             indexOffset += drawCmd.ElemCount;
         }
     }
+
+    ImGui::EndFrame();
 }
 
 void Core::ImguiUserInterface::Destory()
 {
     if (this->m_window)
     {
-        ImGui_ImplWin32_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext(this->m_imguiContext);
         this->m_imguiContext = nullptr;
         this->m_window.reset();

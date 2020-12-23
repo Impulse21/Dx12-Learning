@@ -60,7 +60,7 @@ namespace Core
 		virtual std::string GetTitle() const = 0;
 
 		virtual void* GetNativeHandle() = 0;
-
+		virtual void* GetWindowImpl() = 0;
 		virtual ~IWindow() {};
 
 	};

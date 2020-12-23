@@ -33,14 +33,12 @@ void Core::Dx12Application::RunApplication()
 			elapsedSeconds = 0.0;
 		}
 
-		// TODO: Sort out the game loop update functionality.
+		this->m_gui->NewFrame();
 		this->m_window->PullEvents();
 		this->Update(elapsedSeconds);
 
 		Dx12Texture sceneTexture(this->m_renderDevice);
 		this->RenderScene(sceneTexture);
-		
-		this->m_gui->NewFrame();
 		this->RenderUI();
 
 		// -- Process UI ---
