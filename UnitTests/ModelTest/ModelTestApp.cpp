@@ -239,7 +239,7 @@ void ModelTestApp::RenderUI()
     ImGui::ColorEdit3("Colour", reinterpret_cast<float*>(&this->m_directionLighting.AmbientColour));
 
     ImGui::DragFloat3("Direction", reinterpret_cast<float*>(&this->m_directionLighting.Direction), 0.01f, -1.0f, 1.0f);
-
+    
     ImGui::NewLine();
 
     ImGui::CollapsingHeader("Material Info");
