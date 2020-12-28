@@ -29,11 +29,8 @@ namespace LightingModel
 {
     enum : uint32_t
     {
-        Ambient,
-        Diffuse,
-        Specular,
-        Combined_Phong,
-        NumLightingTypes,
+        Phong,
+        NumLightModels,
     };
 }
 
@@ -41,38 +38,39 @@ namespace RootParameters
 {
     enum
     {
-        InstanceDataSB,
+        MatricesCB,
         MaterialCB,
-        DirectionLightCB,
+        DirectionalLightCB,
+        CameraDataCB,
         NumRootParameters,
     };
 }
 
-struct InstanceData
+struct Matrices
 {
     XMMATRIX ModelMatrix;
     XMMATRIX ModelViewMatrix;
     XMMATRIX InverseTransposeModelViewMatrix;
     XMMATRIX ModelViewProjectionMatrix;
-
-    uint32_t LightingModel;
-    float padding[3];
 };
 
-struct DirectionLight
+struct DirectionalLight
 {
-    XMFLOAT4 AmbientColour = { 0.15f, 0.15f, 0.15f, 1.0f };
+    XMFLOAT4 AmbientColour = { 0.2f, 0.2f, 0.2f, 1.0f };
+    XMFLOAT4 DiffuseColour = { 0.5f, 0.5f, 0.5f, 1.0f };
+    XMFLOAT4 SpecularColour = { 1.0f, 1.0f, 1.0f, 1.0f };
+
     XMFLOAT3 Direction = { 0.0f, -1.0f, 1.0f };
+
     float padding = 0.0f;
 };
 
-struct LightMaterial
+struct CameraData
 {
-    XMFLOAT4 ObjectColour = {1.0f, 0.0f, 0.0f, 1.0f};
-    XMFLOAT4 DiffuseColour = { 1.0f, 0.0f, 0.0f, 1.0f };
+    XMVECTOR Position;
 };
 
-void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX viewProjection, InstanceData& mat)
+void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX viewProjection, Matrices& mat)
 {
     mat.ModelMatrix = model;
     mat.ModelViewMatrix = model * view;
@@ -92,21 +90,34 @@ protected:
     void RenderUI() override;
 
 private:
-    void CreatePipelineStateObjects();
+    void CreateLightModelPSO();
+    std::unique_ptr<RootSignature> CreateRootSignature(
+        uint32_t numParameters,
+        CD3DX12_ROOT_PARAMETER1* rootParameters,
+        uint32_t numSamplers = 0,
+        CD3DX12_STATIC_SAMPLER_DESC* samplers = nullptr);
+
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreatePipelineStateObject(
+        RootSignature const& rootSignature,
+        std::string const& shaderName);
 
 private:
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pso;
-    std::unique_ptr<RootSignature> m_rootSignature;
-
-    std::unique_ptr<Mesh> m_cubeMesh;
-
     RenderTarget m_sceneRenderTarget;
-    std::array<FLOAT, 4> m_clearValue = { 0.4f, 0.6f, 0.9f, 1.0f };
+
+    std::array<FLOAT, 4> m_clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
     Camera m_camera;
 
-    LightMaterial m_material = {};
 
-    DirectionLight m_directionLighting;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_lightModelPso;
+    std::vector<std::unique_ptr<RootSignature>> m_rootSignature;
+
+    std::unique_ptr<Mesh> m_sphereMesh;
+
+    int m_selectedLightModel = LightingModel::Phong;
+
+    Material m_material = Material::Red;
+
+    DirectionalLight m_sun;
 };
 
 CREATE_APPLICATION(LightingApp)
@@ -181,11 +192,13 @@ void LightingApp::LoadContent()
         this->m_sceneRenderTarget.AttachTexture(AttachmentPoint::DepthStencil, depthTexture);
     }
 
-    this->m_cubeMesh = MeshPrefabs::CreateCube(this->m_renderDevice, *uploadCmdList);
-
+    // TODO SPHERE
+    // this->m_sphereMesh = MeshPrefabs::CreateSphere(this->m_renderDevice, *uploadCmdList, 3.0f);
+    this->m_sphereMesh = MeshPrefabs::CreateCube(this->m_renderDevice, *uploadCmdList, 3.0f);
     uint64_t uploadFence = copyQueue->ExecuteCommandList(uploadCmdList);
 
-    this->CreatePipelineStateObjects();
+    
+    this->CreateLightModelPSO();
 
     copyQueue->WaitForFenceValue(uploadFence);
 }
@@ -215,32 +228,32 @@ void LightingApp::RenderScene(Dx12Texture& sceneTexture)
     // Set Render Target
     commandList->SetRenderTarget(this->m_sceneRenderTarget);
 
-    commandList->SetGraphicsRootSignature(*this->m_rootSignature);
-    commandList->SetPipelineState(this->m_pso);
+    // -- Set pipeline state ---
+    commandList->SetGraphicsRootSignature(*this->m_rootSignature[m_selectedLightModel]);
+    commandList->SetPipelineState(this->m_lightModelPso[m_selectedLightModel]);
 
-    XMMATRIX rotationMatrix = XMMatrixRotationZ(10.0f);
+    // Set Matrix data
+    XMMATRIX translationMatrix = XMMatrixTranslation(0.0f, 0.0f, 0.0f);
+    XMMATRIX rotationMatrix = XMMatrixIdentity();
     XMMATRIX scaleMatrix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
+    XMMATRIX worldMatrix = scaleMatrix * rotationMatrix * translationMatrix;
     XMMATRIX viewMatrix = this->m_camera.GetViewMatrix();
     XMMATRIX viewProjectionMatrix = viewMatrix * this->m_camera.GetProjectionMatrix();
 
-    std::vector<InstanceData> instanceData(LightingModel::NumLightingTypes);
-    for (int i = 0; i < LightingModel::NumLightingTypes; i++)
-    {
-        instanceData[i].LightingModel = i;
+    Matrices matrices;
+    ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
 
-        // Set Matrix data
-        XMMATRIX translationMatrix = XMMatrixTranslation(-3.0f + i * 2, 0.0f, 0.0f);
-        XMMATRIX worldMatrix = scaleMatrix * rotationMatrix * translationMatrix;
-        ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, instanceData[i]);
-
-    }
-    
-    commandList->SetGraphicsDynamicStructuredBuffer(RootParameters::InstanceDataSB, instanceData);
+    // -- Set Pipeline state parameters ---
+    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
     commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionLightCB, this->m_directionLighting);
+    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionalLightCB, this->m_sun);
+
+    CameraData cameraData = {};
+    cameraData.Position = this->m_camera.GetTranslation();
+    commandList->SetGraphics32BitConstants(RootParameters::CameraDataCB, cameraData);
 
     // -- Draw Ambient Mesh ---
-    this->m_cubeMesh->Draw(*commandList, LightingModel::NumLightingTypes);
+    this->m_sphereMesh->Draw(*commandList);
 
     this->m_renderDevice->GetQueue()->ExecuteCommandList(commandList);
     sceneTexture.SetDx12Resource(this->m_sceneRenderTarget.GetTexture(Color0).GetDx12Resource());
@@ -249,64 +262,103 @@ void LightingApp::RenderScene(Dx12Texture& sceneTexture)
 void LightingApp::RenderUI()
 {
     static bool showWindow = true;
-    ImGui::Begin("Shader Parameters", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Begin("Options", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
 
-    ImGui::CollapsingHeader("Direction Lighting");
+    ImGui::Combo("Lighting Mode", &this->m_selectedLightModel, "Phong");
 
-    ImGui::ColorEdit3("Colour", reinterpret_cast<float*>(&this->m_directionLighting.AmbientColour));
+    ImGui::NewLine();
+    ImGui::CollapsingHeader("Material Parameters");
 
-    ImGui::DragFloat3("Direction", reinterpret_cast<float*>(&this->m_directionLighting.Direction), 0.01f, -1.0f, 1.0f);
-    
+    switch (this->m_selectedLightModel)
+    {
+    case LightingModel::Phong:
+        ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&this->m_material.Ambient));
+        ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
+        ImGui::ColorEdit3("Specular Colour", reinterpret_cast<float*>(&this->m_material.Specular));
+        ImGui::DragFloat("Shininess", &this->m_material.Shininess, 0.1f, 0.0f, 256.0f);
+
+        break;
+    default:
+        ImGui::Text("No parameters");
+    }
+
     ImGui::NewLine();
 
-    ImGui::CollapsingHeader("Material Info");
-
-    // color picker
-    ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_material.DiffuseColour));
-
+    ImGui::CollapsingHeader("Sun Parameters");
+    ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&this->m_sun.AmbientColour));
+    ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_sun.DiffuseColour));
+    ImGui::ColorEdit3("Specular Colour", reinterpret_cast<float*>(&this->m_sun.SpecularColour));
+    ImGui::DragFloat3("Direction", reinterpret_cast<float*>(&this->m_sun.Direction), 0.01f, -1.0f, 1.0f);
     ImGui::End();
-
 }
 
-void LightingApp::CreatePipelineStateObjects()
+void LightingApp::CreateLightModelPSO()
 {
-	// -- Create Root Signature ---
-	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-	if (FAILED(this->m_renderDevice->GetD3DDevice()->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
-	{
-		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-	}
+    this->m_rootSignature.resize(LightingModel::NumLightModels);
+    this->m_lightModelPso.resize(LightingModel::NumLightModels);
 
-	// Allow input layout and deny unnecessary access to certain pipeline stages.
-	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+    for (int i = 0; i < LightingModel::NumLightModels; i++)
+    {
+        switch (i)
+        {
+        case LightingModel::Phong:
 
-	CD3DX12_DESCRIPTOR_RANGE1 descriptorRage(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+            CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
+            rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+            rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+            rootParameters[RootParameters::DirectionalLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+            rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
 
-	CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-    rootParameters[RootParameters::InstanceDataSB].InitAsShaderResourceView(0);
-    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParameters[RootParameters::DirectionLightCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+            this->m_rootSignature[i] = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
+            this->m_lightModelPso[i] = this->CreatePipelineStateObject(*this->m_rootSignature[i], "PhongLighting");
+            break;
 
-	CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
+        default:
+            LOG_CORE_WARN("Lighting model not implmented yet. Skipping");
+            continue;
+        }
+    }
+}
 
-	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
-	rootSignatureDescription.Init_1_1(
-		RootParameters::NumRootParameters,
-		rootParameters,
-		1,
-		&linearRepeatSampler,
-		rootSignatureFlags);
+std::unique_ptr<RootSignature> LightingApp::CreateRootSignature(
+    uint32_t numParameters,
+    CD3DX12_ROOT_PARAMETER1* rootParameters,
+    uint32_t numSamplers,
+    CD3DX12_STATIC_SAMPLER_DESC* samplers)
+{
+    // -- Create Root Signature ---
+    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
+    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+    if (FAILED(this->m_renderDevice->GetD3DDevice()->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
+    {
+        featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+    }
 
-	this->m_rootSignature = std::make_unique<RootSignature>(
-		this->m_renderDevice,
-		rootSignatureDescription.Desc_1_1,
-		featureData.HighestVersion);
+    // Allow input layout and deny unnecessary access to certain pipeline stages.
+    D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
+    rootSignatureDescription.Init_1_1(
+        RootParameters::NumRootParameters,
+        rootParameters,
+        numSamplers,
+        samplers,
+        rootSignatureFlags);
+
+    return std::make_unique<RootSignature>(
+        this->m_renderDevice,
+        rootSignatureDescription.Desc_1_1,
+        featureData.HighestVersion);
+}
+
+Microsoft::WRL::ComPtr<ID3D12PipelineState> LightingApp::CreatePipelineStateObject(
+    RootSignature const& rootSignature,
+    std::string const& shaderName)
+{
     // Setup the pipeline state.
     struct PipelineStateStream
     {
@@ -322,15 +374,15 @@ void LightingApp::CreatePipelineStateObjects()
 
     std::string baseAssetPath(fs::current_path().u8string());
     std::vector<char> vertexByteData;
-    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + "SimpleLightingVS.cso", vertexByteData);
+    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + shaderName + "VS.cso", vertexByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Vertex Shader");
 
 
     std::vector<char> pixelByteData;
-    success = BinaryReader::ReadFile(baseAssetPath + "\\" + "SimpleLightingPS.cso", pixelByteData);
+    success = BinaryReader::ReadFile(baseAssetPath + "\\" + shaderName + "PS.cso", pixelByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Pixel Shader");
 
-    pipelineStateStream.pRootSignature = this->m_rootSignature->GetRootSignature().Get();
+    pipelineStateStream.pRootSignature = rootSignature.GetRootSignature().Get();
     pipelineStateStream.InputLayout = { VertexPositionNormalTexture::InputElements, VertexPositionNormalTexture::InputElementCount };
     pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexByteData.data(), vertexByteData.size());
@@ -344,8 +396,11 @@ void LightingApp::CreatePipelineStateObjects()
         sizeof(PipelineStateStream), &pipelineStateStream
     };
 
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pso;
     ThrowIfFailed(
         this->m_renderDevice->GetD3DDevice()->CreatePipelineState(
             &pipelineStateStreamDesc,
-            IID_PPV_ARGS(&this->m_pso)));
+            IID_PPV_ARGS(&pso)));
+
+    return pso;
 }

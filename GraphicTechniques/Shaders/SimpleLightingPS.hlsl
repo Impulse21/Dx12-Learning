@@ -35,6 +35,7 @@ struct VSOutput
     float3 normalVS : NORMAL;
     float3 normalWS : NORMAL1;
     float2 texCoord : TEXCOORD;
+    float3 viewDirVS : VIEWDIR;
     uint instanceID : SV_InstanceID;
 };
 
@@ -46,6 +47,8 @@ float4 CalculateAmbientLighting(float strength, float4 diffuseColour)
 float4 main(VSOutput input) : SV_TARGET
 {
     InstanceData instanceData = InstanceDataCB[input.instanceID];
+    
+    float3 lightDir = -directionalLightCB.Direction;
     
     switch (instanceData.LightingModel)
     {
@@ -59,11 +62,20 @@ float4 main(VSOutput input) : SV_TARGET
        
         case LIGHTING_MODEL_DIFFUSE:
             {
-                float3 lightDir = -directionalLightCB.Direction;
                 float lightIntensity = saturate(dot(input.normalWS, lightDir));
                 float4 diffuseColour = saturate(materialCB.DiffuseColour * lightIntensity);
                 return  diffuseColour * materialCB.ObjectColour;
             }
+        
+        case LIGHTING_MODEL_SPECULAR:
+            {
+                float specularStrength = 0.5;
+                float3 reflectionDir = reflect(lightDir, input.normalWS);
+                float specular = pow(saturate(dot(input.viewDirVS, reflectionDir)), 32);
+            
+                return specularStrength * specular * directionalLightCB.AmbientColour;
+            }
+
     }
     
     return float4(0.0f, 0.0f, 0.0f, 1.0f);

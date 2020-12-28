@@ -17,6 +17,7 @@ struct VSOutput
     float3 normalVS     : NORMAL;
     float3 normalWS     : NORMAL1;
     float2 texCoord     : TEXCOORD;
+    float3 viewDirVS    : VIEWDIR;
     uint instanceID     : SV_InstanceID;
     float4 position     : SV_Position;
 };
@@ -35,5 +36,6 @@ VSOutput main(VSInput input)
     output.normalWS = normalize(output.normalWS);
     output.texCoord = input.texCoord;
     output.instanceID = input.instanceID;
+    output.viewDirVS = normalize(float3(0, 0, 0) - (float3) output.positionVS);
     return output;
 }

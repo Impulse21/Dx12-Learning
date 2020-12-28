@@ -37,7 +37,7 @@ namespace RootParameters
     };
 }
 
-struct InstanceData
+struct Matrices
 {
     XMMATRIX ModelMatrix;
     XMMATRIX ModelViewMatrix;
@@ -52,7 +52,7 @@ struct DirectionLight
     float padding = 0.0f;
 };
 
-void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX viewProjection, InstanceData& mat)
+void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX viewProjection, Matrices& mat)
 {
     mat.ModelMatrix = model;
     mat.ModelViewMatrix = model * view;
@@ -215,7 +215,7 @@ void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
     XMMATRIX viewMatrix = this->m_camera.GetViewMatrix();
     XMMATRIX viewProjectionMatrix = viewMatrix * this->m_camera.GetProjectionMatrix();
 
-    InstanceData matrices;
+    Matrices matrices;
     ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
     commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
     commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
