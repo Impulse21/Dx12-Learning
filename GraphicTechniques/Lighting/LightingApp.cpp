@@ -25,14 +25,25 @@ namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
 
+namespace LightingModel
+{
+    enum : uint32_t
+    {
+        Ambient,
+        Diffuse,
+        Specular,
+        Combined_Phong,
+        NumLightingTypes,
+    };
+}
+
 namespace RootParameters
 {
     enum
     {
-        MatricesCB,
+        InstanceDataSB,
         MaterialCB,
         DirectionLightCB,
-        Textures,
         NumRootParameters,
     };
 }
@@ -43,6 +54,9 @@ struct InstanceData
     XMMATRIX ModelViewMatrix;
     XMMATRIX InverseTransposeModelViewMatrix;
     XMMATRIX ModelViewProjectionMatrix;
+
+    uint32_t LightingModel;
+    float padding[3];
 };
 
 struct DirectionLight
@@ -50,6 +64,12 @@ struct DirectionLight
     XMFLOAT4 AmbientColour = { 0.15f, 0.15f, 0.15f, 1.0f };
     XMFLOAT3 Direction = { 0.0f, -1.0f, 1.0f };
     float padding = 0.0f;
+};
+
+struct LightMaterial
+{
+    XMFLOAT4 ObjectColour = {1.0f, 0.0f, 0.0f, 1.0f};
+    XMFLOAT4 DiffuseColour = { 1.0f, 0.0f, 0.0f, 1.0f };
 };
 
 void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX viewProjection, InstanceData& mat)
@@ -60,10 +80,10 @@ void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX view
     mat.ModelViewProjectionMatrix = model * viewProjection;
 }
 
-class ModelTestApp : public Dx12Application
+class LightingApp : public Dx12Application
 {
 public:
-    ModelTestApp();
+    LightingApp();
 
 protected:
     void LoadContent() override;
@@ -79,25 +99,23 @@ private:
     std::unique_ptr<RootSignature> m_rootSignature;
 
     std::unique_ptr<Mesh> m_cubeMesh;
-    // Index buffer for the cube.
-    std::unique_ptr<Dx12Texture> m_texture = nullptr;
 
     RenderTarget m_sceneRenderTarget;
     std::array<FLOAT, 4> m_clearValue = { 0.4f, 0.6f, 0.9f, 1.0f };
     Camera m_camera;
 
-    Material m_material;
+    LightMaterial m_material = {};
 
     DirectionLight m_directionLighting;
 };
 
-CREATE_APPLICATION(ModelTestApp)
+CREATE_APPLICATION(LightingApp)
 
-ModelTestApp::ModelTestApp()
+LightingApp::LightingApp()
 {
 }
 
-void ModelTestApp::LoadContent()
+void LightingApp::LoadContent()
 {
     // -- Set up camera data ---
     XMVECTOR cameraPos = XMVectorSet(0, 5, -5, 1);
@@ -165,13 +183,6 @@ void ModelTestApp::LoadContent()
 
     this->m_cubeMesh = MeshPrefabs::CreateCube(this->m_renderDevice, *uploadCmdList);
 
-	{
-        this->m_texture = std::make_unique<Dx12Texture>(this->m_renderDevice);
-
-		std::wstring baseAssetPath(L"D:\\Users\\C.DiPaolo\\Development\\DX12\\Dx12-Learning\\Assets\\");
-		uploadCmdList->LoadTextureFromFile(*this->m_texture, baseAssetPath + L"UV_Test_Pattern.dds");
-    }
-
     uint64_t uploadFence = copyQueue->ExecuteCommandList(uploadCmdList);
 
     this->CreatePipelineStateObjects();
@@ -179,11 +190,11 @@ void ModelTestApp::LoadContent()
     copyQueue->WaitForFenceValue(uploadFence);
 }
 
-void ModelTestApp::Update(double deltaTime)
+void LightingApp::Update(double deltaTime)
 {
 }
 
-void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
+void LightingApp::RenderScene(Dx12Texture& sceneTexture)
 {
     auto commandList = this->m_renderDevice->GetQueue()->GetCommandList();
 
@@ -207,29 +218,35 @@ void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
     commandList->SetGraphicsRootSignature(*this->m_rootSignature);
     commandList->SetPipelineState(this->m_pso);
 
-    // Set Matrix data
-    XMMATRIX translationMatrix = XMMatrixTranslation(0.0f, 0.0f, 0.0f);
-    XMMATRIX rotationMatrix = XMMatrixIdentity();
+    XMMATRIX rotationMatrix = XMMatrixRotationZ(10.0f);
     XMMATRIX scaleMatrix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
-    XMMATRIX worldMatrix = scaleMatrix * rotationMatrix * translationMatrix;
     XMMATRIX viewMatrix = this->m_camera.GetViewMatrix();
     XMMATRIX viewProjectionMatrix = viewMatrix * this->m_camera.GetProjectionMatrix();
 
-    InstanceData matrices;
-    ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
+    std::vector<InstanceData> instanceData(LightingModel::NumLightingTypes);
+    for (int i = 0; i < LightingModel::NumLightingTypes; i++)
+    {
+        instanceData[i].LightingModel = i;
+
+        // Set Matrix data
+        XMMATRIX translationMatrix = XMMatrixTranslation(-3.0f + i * 2, 0.0f, 0.0f);
+        XMMATRIX worldMatrix = scaleMatrix * rotationMatrix * translationMatrix;
+        ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, instanceData[i]);
+
+    }
+    
+    commandList->SetGraphicsDynamicStructuredBuffer(RootParameters::InstanceDataSB, instanceData);
     commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
     commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionLightCB, this->m_directionLighting);
 
-    commandList->SetShaderResourceView(RootParameters::Textures, 0, *this->m_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
-    this->m_cubeMesh->Draw(*commandList);
+    // -- Draw Ambient Mesh ---
+    this->m_cubeMesh->Draw(*commandList, LightingModel::NumLightingTypes);
 
     this->m_renderDevice->GetQueue()->ExecuteCommandList(commandList);
     sceneTexture.SetDx12Resource(this->m_sceneRenderTarget.GetTexture(Color0).GetDx12Resource());
 }
 
-void ModelTestApp::RenderUI()
+void LightingApp::RenderUI()
 {
     static bool showWindow = true;
     ImGui::Begin("Shader Parameters", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
@@ -245,13 +262,13 @@ void ModelTestApp::RenderUI()
     ImGui::CollapsingHeader("Material Info");
 
     // color picker
-    ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
+    ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_material.DiffuseColour));
 
     ImGui::End();
 
 }
 
-void ModelTestApp::CreatePipelineStateObjects()
+void LightingApp::CreatePipelineStateObjects()
 {
 	// -- Create Root Signature ---
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
@@ -268,13 +285,12 @@ void ModelTestApp::CreatePipelineStateObjects()
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-	CD3DX12_DESCRIPTOR_RANGE1 descriptorRage(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	CD3DX12_DESCRIPTOR_RANGE1 descriptorRage(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
 
 	CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-    rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParameters[RootParameters::DirectionLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-	rootParameters[RootParameters::Textures].InitAsDescriptorTable(1, &descriptorRage, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::InstanceDataSB].InitAsShaderResourceView(0);
+    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::DirectionLightCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 
@@ -306,12 +322,12 @@ void ModelTestApp::CreatePipelineStateObjects()
 
     std::string baseAssetPath(fs::current_path().u8string());
     std::vector<char> vertexByteData;
-    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + "ModelVS.cso", vertexByteData);
+    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + "SimpleLightingVS.cso", vertexByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Vertex Shader");
 
 
     std::vector<char> pixelByteData;
-    success = BinaryReader::ReadFile(baseAssetPath + "\\" + "ModelPS.cso", pixelByteData);
+    success = BinaryReader::ReadFile(baseAssetPath + "\\" + "SimpleLightingPS.cso", pixelByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Pixel Shader");
 
     pipelineStateStream.pRootSignature = this->m_rootSignature->GetRootSignature().Get();

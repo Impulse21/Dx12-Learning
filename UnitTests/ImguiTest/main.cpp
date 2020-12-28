@@ -44,10 +44,10 @@ namespace RootParameters
         NumRootParameters,
     };
 }
-class ModelTestApp : public Dx12Application
+class LightingApp : public Dx12Application
 {
 public:
-    ModelTestApp();
+    LightingApp();
 
 protected:
     void LoadContent() override;
@@ -75,13 +75,13 @@ private:
     std::array<FLOAT, 4> m_clearValue = { 0.4f, 0.6f, 0.9f, 1.0f };
 };
 
-CREATE_APPLICATION(ModelTestApp)
+CREATE_APPLICATION(LightingApp)
 
-ModelTestApp::ModelTestApp()
+LightingApp::LightingApp()
 {
 }
 
-void ModelTestApp::LoadContent()
+void LightingApp::LoadContent()
 {
     auto copyQueue = this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COPY);
     auto uploadCmdList = copyQueue->GetCommandList();
@@ -178,11 +178,11 @@ void ModelTestApp::LoadContent()
     copyQueue->WaitForFenceValue(uploadFence);
 }
 
-void ModelTestApp::Update(double deltaTime)
+void LightingApp::Update(double deltaTime)
 {
 }
 
-void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
+void LightingApp::RenderScene(Dx12Texture& sceneTexture)
 {
     auto commandList = this->m_renderDevice->GetQueue()->GetCommandList();
 
@@ -218,12 +218,12 @@ void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
     sceneTexture.SetDx12Resource(this->m_sceneRenderTarget.GetTexture(Color0).GetDx12Resource());
 }
 
-void ModelTestApp::RenderUI()
+void LightingApp::RenderUI()
 {
     ImGui::ShowDemoWindow();
 }
 
-void ModelTestApp::CreatePipelineStateObjects()
+void LightingApp::CreatePipelineStateObjects()
 {
 	// -- Create Root Signature ---
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};

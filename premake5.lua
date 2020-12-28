@@ -91,6 +91,49 @@ group "Core"
 			-- "3rdParty/dxc_2020_10-22/lib/dxcompiler.lib"
 		}
 
+group "GraphicTechniques"
+	project "Lighting"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+
+		files
+		{
+			"GraphicTechniques/Lighting/**.h",
+			"GraphicTechniques/Lighting/**.cpp",
+			"GraphicTechniques/Shaders/**.hlsl",
+			"GraphicTechniques/Shaders/**.hlsli",
+		}
+
+		includedirs
+		{
+			"GraphicTechniques/Lighting",
+			"Core",
+
+			"ThridParty/spdlog/include",
+			"ThridParty/imgui",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"Imgui",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
+
+		filter { "files:**VS.hlsl" }
+			shadertype "Vertex"
+			shadermodel "6.0"
+		filter { }
+
+		filter { "files:**PS.hlsl" }
+			shadertype "Pixel"
+			shadermodel "6.0"
+		filter { }
+		
 group "UnitTests"
 	project "TriangleTest"
 		kind "ConsoleApp"

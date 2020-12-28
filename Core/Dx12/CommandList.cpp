@@ -531,6 +531,16 @@ void Core::CommandList::SetGraphics32BitConstants(uint32_t rootParameterIndex, u
 	this->m_commandList->SetGraphicsRoot32BitConstants(rootParameterIndex, numConstants, constants, 0);
 }
 
+void Core::CommandList::SetGraphicsDynamicStructuredBuffer(uint32_t slot, size_t numElements, size_t elementSize, const void* bufferData)
+{
+	size_t bufferSize = numElements * elementSize;
+	auto heapAllocation = this->m_uploadBuffer->Allocate(bufferSize, elementSize);
+
+	memcpy(heapAllocation.Cpu, bufferData, bufferSize);
+
+	this->m_commandList->SetGraphicsRootShaderResourceView(slot, heapAllocation.Gpu);
+}
+
 void Core::CommandList::SetGraphicsDynamicConstantBuffer(uint32_t rootParameterIndex, size_t sizeInBytes, const void* bufferData)
 {
 	// Constant buffers must be 256-byte aligned.

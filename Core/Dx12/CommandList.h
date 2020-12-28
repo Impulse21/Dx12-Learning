@@ -133,6 +133,16 @@ namespace Core
 		}
 
 		/**
+		 * Set dynamic structured buffer contents.
+		 */
+		void SetGraphicsDynamicStructuredBuffer(uint32_t slot, size_t numElements, size_t elementSize, const void* bufferData);
+		template<typename T>
+		void SetGraphicsDynamicStructuredBuffer(uint32_t slot, const std::vector<T>& bufferData)
+		{
+			this->SetGraphicsDynamicStructuredBuffer(slot, bufferData.size(), sizeof(T), bufferData.data());
+		}
+
+		/**
 		 * Set a dynamic constant buffer data to an inline descriptor in the root
 		 * signature.
 		 */
