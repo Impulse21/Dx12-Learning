@@ -7,12 +7,11 @@ namespace Core
 	struct Material
 	{
 		Material(
-			DirectX::XMFLOAT4 diffuse = { 1.0f, 1.0f, 1.0f, 1.0f },
-			DirectX::XMFLOAT4 ambient = { 1.0f, 0.5f, 0.31f, 1.0f },
+			DirectX::XMFLOAT4 colour = { 1.0f, 1.0f, 1.0f, 1.0f },
 			DirectX::XMFLOAT4 specular = { 0.5f, 0.5f, 0.5f, 1.0f },
 			float shininess = 32.0f)
-			: Ambient(ambient)
-			, Diffuse(diffuse)
+			: Ambient(colour)
+			, Diffuse(colour)
 			, Specular(specular)
 			, Shininess(shininess)
 

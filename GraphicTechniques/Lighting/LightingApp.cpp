@@ -129,7 +129,7 @@ LightingApp::LightingApp()
 void LightingApp::LoadContent()
 {
     // -- Set up camera data ---
-    XMVECTOR cameraPos = XMVectorSet(0, 5, -5, 1);
+    XMVECTOR cameraPos = XMVectorSet(0, 0, -5, 1);
     XMVECTOR cameraTarget = XMVectorSet(0, 0, 0, 1);
     XMVECTOR cameraUp = XMVectorSet(0, 1, 0, 0);
 
@@ -193,8 +193,8 @@ void LightingApp::LoadContent()
     }
 
     // TODO SPHERE
-    // this->m_sphereMesh = MeshPrefabs::CreateSphere(this->m_renderDevice, *uploadCmdList, 3.0f);
-    this->m_sphereMesh = MeshPrefabs::CreateCube(this->m_renderDevice, *uploadCmdList, 3.0f);
+    this->m_sphereMesh = MeshPrefabs::CreateSphere(this->m_renderDevice, *uploadCmdList, 3.0f);
+
     uint64_t uploadFence = copyQueue->ExecuteCommandList(uploadCmdList);
 
     
@@ -272,10 +272,11 @@ void LightingApp::RenderUI()
     switch (this->m_selectedLightModel)
     {
     case LightingModel::Phong:
-        ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&this->m_material.Ambient));
-        ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
-        ImGui::ColorEdit3("Specular Colour", reinterpret_cast<float*>(&this->m_material.Specular));
-        ImGui::DragFloat("Shininess", &this->m_material.Shininess, 0.1f, 0.0f, 256.0f);
+
+        ImGui::ColorEdit3("Material Ambient Colour", reinterpret_cast<float*>(&this->m_material.Ambient));
+        ImGui::ColorEdit3("Material Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
+        ImGui::ColorEdit3("Material Specular Colour", reinterpret_cast<float*>(&this->m_material.Specular));
+        ImGui::DragFloat("Material Shininess", &this->m_material.Shininess, 0.1f, 0.0f, 256.0f);
 
         break;
     default:
@@ -284,11 +285,12 @@ void LightingApp::RenderUI()
 
     ImGui::NewLine();
 
+
     ImGui::CollapsingHeader("Sun Parameters");
-    ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&this->m_sun.AmbientColour));
-    ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&this->m_sun.DiffuseColour));
-    ImGui::ColorEdit3("Specular Colour", reinterpret_cast<float*>(&this->m_sun.SpecularColour));
-    ImGui::DragFloat3("Direction", reinterpret_cast<float*>(&this->m_sun.Direction), 0.01f, -1.0f, 1.0f);
+    ImGui::ColorEdit3("Sun Ambient Colour", reinterpret_cast<float*>(&this->m_sun.AmbientColour));
+    ImGui::ColorEdit3("Sun Diffuse Colour", reinterpret_cast<float*>(&this->m_sun.DiffuseColour));
+    ImGui::ColorEdit3("Sun Specular Colour", reinterpret_cast<float*>(&this->m_sun.SpecularColour));
+    ImGui::DragFloat3("Sun Direction", reinterpret_cast<float*>(&this->m_sun.Direction), 0.01f, -1.0f, 1.0f);
     ImGui::End();
 }
 

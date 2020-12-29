@@ -374,7 +374,7 @@ void Core::CommandList::CopyBuffer(
 		this->FlushResourceBarriers();
 
 		// Track resource
-		UpdateSubresources(
+		UpdateSubresources<1>(
 			this->m_commandList.Get(),
 			buffer.Get(), uploadResource.Get(),
 			0, 0, 1, &subresourceData);

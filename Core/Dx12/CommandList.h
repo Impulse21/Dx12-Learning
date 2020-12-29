@@ -69,7 +69,7 @@ namespace Core
 			Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 			this->CopyBuffer(
 				resource,
-				buffer.GetSizeInBytes(),
+				buffer.GetNumElements(),
 				buffer.GetElementByteStride(),
 				bufferData.data());
 
