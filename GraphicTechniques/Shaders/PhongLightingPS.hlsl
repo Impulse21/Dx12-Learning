@@ -53,13 +53,13 @@ float4 main(VSOutput input) : SV_TARGET
     
     // Diffuse Contribution
     float3 normalWS = normalize(input.normalWS);
-    float3 lightDir = -DirectionLightCB.Direction;
+    float3 lightDir = -normalize(DirectionLightCB.Direction);
     float lightIntensity = saturate(dot(normalWS, lightDir));
     
     float4 diffuseColour = DirectionLightCB.DiffuseColour * (lightIntensity * MaterialCB.Diffuse);
     
     // Specular Constribution
-    float3 reflectDir = reflect(DirectionLightCB.Direction, input.normalWS);
+    float3 reflectDir = reflect(normalize(DirectionLightCB.Direction), input.normalWS);
     float specularIntensity = pow(saturate(dot(input.viewDirWS, reflectDir)), MaterialCB.Shininess);
     
     float4 specular = DirectionLightCB.SpecularColour * (specularIntensity * MaterialCB.Specular);
