@@ -113,6 +113,7 @@ void Core::CommandList::LoadTextureFromFile(Dx12Texture& texture, std::wstring c
 	fs::path filePath(filename);
 	if (!fs::exists(filePath))
 	{
+		LOG_CORE_ERROR("Unable to locate texture filepath");
 		throw std::exception("File not found.");
 	}
 

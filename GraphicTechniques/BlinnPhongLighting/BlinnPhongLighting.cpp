@@ -30,6 +30,7 @@ namespace LightingModel
     enum : uint32_t
     {
         Phong,
+        BlinnPhong,
         NumLightModels,
     };
 }
@@ -60,7 +61,7 @@ struct DirectionalLight
     XMFLOAT4 DiffuseColour = { 0.5f, 0.5f, 0.5f, 1.0f };
     XMFLOAT4 SpecularColour = { 1.0f, 1.0f, 1.0f, 1.0f };
 
-    XMFLOAT3 Direction = { 0.0f, -1.0f, 1.0f };
+    XMFLOAT3 Direction = { 0.0f, -1.0f, 0.0f };
 
     float padding = 0.0f;
 };
@@ -78,10 +79,10 @@ void XM_CALLCONV ComputeMatrices(FXMMATRIX model, CXMMATRIX view, CXMMATRIX view
     mat.ModelViewProjectionMatrix = model * viewProjection;
 }
 
-class LightingApp : public Dx12Application
+class BlinnPhongLightingApp : public Dx12Application
 {
 public:
-    LightingApp();
+    BlinnPhongLightingApp();
 
 protected:
     void LoadContent() override;
@@ -107,6 +108,7 @@ private:
     std::array<FLOAT, 4> m_clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
     Camera m_camera;
 
+    bool m_autoRotate = false;
 
     std::vector<Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_lightModelPso;
     std::vector<std::unique_ptr<RootSignature>> m_rootSignature;
@@ -120,13 +122,13 @@ private:
     DirectionalLight m_sun;
 };
 
-CREATE_APPLICATION(LightingApp)
+CREATE_APPLICATION(BlinnPhongLightingApp)
 
-LightingApp::LightingApp()
+BlinnPhongLightingApp::BlinnPhongLightingApp()
 {
 }
 
-void LightingApp::LoadContent()
+void BlinnPhongLightingApp::LoadContent()
 {
     // -- Set up camera data ---
     XMVECTOR cameraPos = XMVectorSet(0, 0, -5, 1);
@@ -192,7 +194,6 @@ void LightingApp::LoadContent()
         this->m_sceneRenderTarget.AttachTexture(AttachmentPoint::DepthStencil, depthTexture);
     }
 
-    // TODO SPHERE
     this->m_sphereMesh = MeshPrefabs::CreateSphere(this->m_renderDevice, *uploadCmdList, 3.0f);
 
     uint64_t uploadFence = copyQueue->ExecuteCommandList(uploadCmdList);
@@ -203,11 +204,11 @@ void LightingApp::LoadContent()
     copyQueue->WaitForFenceValue(uploadFence);
 }
 
-void LightingApp::Update(double deltaTime)
+void BlinnPhongLightingApp::Update(double deltaTime)
 {
 }
 
-void LightingApp::RenderScene(Dx12Texture& sceneTexture)
+void BlinnPhongLightingApp::RenderScene(Dx12Texture& sceneTexture)
 {
     auto commandList = this->m_renderDevice->GetQueue()->GetCommandList();
 
@@ -259,12 +260,12 @@ void LightingApp::RenderScene(Dx12Texture& sceneTexture)
     sceneTexture.SetDx12Resource(this->m_sceneRenderTarget.GetTexture(Color0).GetDx12Resource());
 }
 
-void LightingApp::RenderUI()
+void BlinnPhongLightingApp::RenderUI()
 {
     static bool showWindow = true;
     ImGui::Begin("Options", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
 
-    ImGui::Combo("Lighting Mode", &this->m_selectedLightModel, "Phong");
+    ImGui::Combo("Lighting Mode", &this->m_selectedLightModel, "Phong\0BlinnPhong");
 
     ImGui::NewLine();
     ImGui::CollapsingHeader("Material Parameters");
@@ -272,6 +273,7 @@ void LightingApp::RenderUI()
     switch (this->m_selectedLightModel)
     {
     case LightingModel::Phong:
+    case LightingModel::BlinnPhong:
 
         ImGui::ColorEdit3("Material Ambient Colour", reinterpret_cast<float*>(&this->m_material.Ambient));
         ImGui::ColorEdit3("Material Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
@@ -290,29 +292,47 @@ void LightingApp::RenderUI()
     ImGui::ColorEdit3("Sun Ambient Colour", reinterpret_cast<float*>(&this->m_sun.AmbientColour));
     ImGui::ColorEdit3("Sun Diffuse Colour", reinterpret_cast<float*>(&this->m_sun.DiffuseColour));
     ImGui::ColorEdit3("Sun Specular Colour", reinterpret_cast<float*>(&this->m_sun.SpecularColour));
-    ImGui::DragFloat3("Sun Direction", reinterpret_cast<float*>(&this->m_sun.Direction), 0.01f, -1.0f, 1.0f);
+
+    ImGui::Checkbox("Auto Rotate X Axis", &this->m_autoRotate);
+    if (this->m_autoRotate)
+    {
+        ImGui::Text(
+            "Sun Direction <%f, %f, %f>",
+            this->m_sun.Direction.x,
+            this->m_sun.Direction.y,
+            this->m_sun.Direction.z);
+    }
+    else
+    {
+        ImGui::DragFloat3("Sun Direction", reinterpret_cast<float*>(&this->m_sun.Direction), 0.01f, -1.0f, 1.0f);
+    }
+
     ImGui::End();
 }
 
-void LightingApp::CreateLightModelPSO()
+void BlinnPhongLightingApp::CreateLightModelPSO()
 {
     this->m_rootSignature.resize(LightingModel::NumLightModels);
     this->m_lightModelPso.resize(LightingModel::NumLightModels);
 
+    CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
+    rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::DirectionalLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+
     for (int i = 0; i < LightingModel::NumLightModels; i++)
     {
+        this->m_rootSignature[i] = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
+
         switch (i)
         {
-        case LightingModel::Phong:
-
-            CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-            rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-            rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-            rootParameters[RootParameters::DirectionalLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-            rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-
-            this->m_rootSignature[i] = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
+        case LightingModel::Phong:        
             this->m_lightModelPso[i] = this->CreatePipelineStateObject(*this->m_rootSignature[i], "PhongLighting");
+            break;
+
+        case LightingModel::BlinnPhong:
+            this->m_lightModelPso[i] = this->CreatePipelineStateObject(*this->m_rootSignature[i], "BlinnPhongLighting");
             break;
 
         default:
@@ -322,7 +342,7 @@ void LightingApp::CreateLightModelPSO()
     }
 }
 
-std::unique_ptr<RootSignature> LightingApp::CreateRootSignature(
+std::unique_ptr<RootSignature> BlinnPhongLightingApp::CreateRootSignature(
     uint32_t numParameters,
     CD3DX12_ROOT_PARAMETER1* rootParameters,
     uint32_t numSamplers,
@@ -345,7 +365,7 @@ std::unique_ptr<RootSignature> LightingApp::CreateRootSignature(
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
     rootSignatureDescription.Init_1_1(
-        RootParameters::NumRootParameters,
+        numParameters,
         rootParameters,
         numSamplers,
         samplers,
@@ -357,7 +377,7 @@ std::unique_ptr<RootSignature> LightingApp::CreateRootSignature(
         featureData.HighestVersion);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> LightingApp::CreatePipelineStateObject(
+Microsoft::WRL::ComPtr<ID3D12PipelineState> BlinnPhongLightingApp::CreatePipelineStateObject(
     RootSignature const& rootSignature,
     std::string const& shaderName)
 {

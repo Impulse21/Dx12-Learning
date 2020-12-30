@@ -41,7 +41,8 @@ workspace "Dx12Learning"
 	targetdir ("Build/Bin/%{prj.name}/%{cfg.longname}")
 	objdir ("Build/Obj/%{prj.name}/%{cfg.longname}")
 	outputdir = "Build/%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
-
+	debugdir "$(OutDir)"
+	   
 group "_ThridParty"
 	include "ThridParty/glfw"
 	include "ThridParty/imgui"
@@ -70,6 +71,11 @@ group "Core"
 			"Core/**.cpp",
 		}
 
+		libdirs 
+		{
+			"ThridParty/DirectXTex/DirectXTex/Bin/Desktop_2019/x64/Debug" 
+		}
+		
 		includedirs
 		{
 			"Core",
@@ -92,22 +98,21 @@ group "Core"
 		}
 
 group "GraphicTechniques"
-	project "Lighting"
+	project "PhongLighting"
 		kind "ConsoleApp"
 		language "C++"
 		cppdialect "C++17"
 
 		files
 		{
-			"GraphicTechniques/Lighting/**.h",
-			"GraphicTechniques/Lighting/**.cpp",
-			"GraphicTechniques/Shaders/**.hlsl",
-			"GraphicTechniques/Shaders/**.hlsli",
+			"GraphicTechniques/PhongLighting/**.h",
+			"GraphicTechniques/PhongLighting/**.cpp",
+			"GraphicTechniques/Shaders/PhongLighting*.hlsl",
 		}
 
 		includedirs
 		{
-			"GraphicTechniques/Lighting",
+			"GraphicTechniques/PhongLighting",
 			"Core",
 
 			"ThridParty/spdlog/include",
@@ -133,7 +138,49 @@ group "GraphicTechniques"
 			shadertype "Pixel"
 			shadermodel "6.0"
 		filter { }
-		
+
+	project "BlinnPhongLighting"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+
+		files
+		{
+			"GraphicTechniques/BlinnPhongLighting/**.h",
+			"GraphicTechniques/BlinnPhongLighting/**.cpp",
+			"GraphicTechniques/Shaders/PhongLighting**.hlsl",
+			"GraphicTechniques/Shaders/BlinnPhongLighting**.hlsl",
+		}
+
+		includedirs
+		{
+			"GraphicTechniques/BlinnPhongLighting",
+			"Core",
+
+			"ThridParty/spdlog/include",
+			"ThridParty/imgui",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"Imgui",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
+
+		filter { "files:**VS.hlsl" }
+			shadertype "Vertex"
+			shadermodel "6.0"
+		filter { }
+
+		filter { "files:**PS.hlsl" }
+			shadertype "Pixel"
+			shadermodel "6.0"
+		filter { }
+
 group "UnitTests"
 	project "TriangleTest"
 		kind "ConsoleApp"
