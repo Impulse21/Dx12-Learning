@@ -34,4 +34,24 @@ namespace Core
 		static const Material Green;
 		static const Material Blue;
 	};
+
+	struct PbrMaterial
+	{
+		PbrMaterial(
+			DirectX::XMFLOAT4 albedo = { 1.0f, 1.0f, 1.0f, 1.0f },
+			float metallic = 1.0f,
+			float roughness = 1.0f,
+			float ambientOcclusion = 1.0f)
+			: Albedo(albedo)
+			, Metallic(metallic)
+			, Roughness(roughness)
+			, AmbientOcclusion(ambientOcclusion)
+		{}
+
+		DirectX::XMFLOAT4 Albedo;
+		float Metallic;
+		float Roughness;
+		float AmbientOcclusion;
+
+	};
 }

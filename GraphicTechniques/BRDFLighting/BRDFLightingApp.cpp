@@ -25,23 +25,15 @@ namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
 
-namespace LightingModel
-{
-    enum : uint32_t
-    {
-        Phong,
-        NumLightModels,
-    };
-}
-
 namespace RootParameters
 {
     enum
     {
         MatricesCB,
-        MaterialCB,
-        DirectionalLightCB,
         CameraDataCB,
+        MaterialCB,
+        LightPropertiesCB,
+        PointLightsSB,
         NumRootParameters,
     };
 }
@@ -63,6 +55,18 @@ struct DirectionalLight
     XMFLOAT3 Direction = { 0.0f, -1.0f, 1.0f };
 
     float padding = 0.0f;
+};
+
+struct PointLight
+{
+    XMFLOAT4 Position = { 0.0f, 0.0f, -5.0f, 1.0f };
+    XMFLOAT4 Colour = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+};
+
+struct LightProperties
+{
+    uint32_t numPointLights;
 };
 
 struct CameraData
@@ -107,15 +111,15 @@ private:
     std::array<FLOAT, 4> m_clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
     Camera m_camera;
 
-
-    std::vector<Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_lightModelPso;
-    std::vector<std::unique_ptr<RootSignature>> m_rootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_lightModelPso;
+    std::unique_ptr<RootSignature> m_rootSignature;
 
     std::unique_ptr<Mesh> m_sphereMesh;
 
-    int m_selectedLightModel = LightingModel::Phong;
+    PbrMaterial m_material = PbrMaterial({1.0f, 0.0f, 0.0f, 1.0f});
 
-    Material m_material = Material::Red;
+    const size_t MaxLights = 4;
+    std::vector<PointLight> m_pointLights;
 
     DirectionalLight m_sun;
 };
@@ -196,7 +200,10 @@ void BRDFLightingApp::LoadContent()
 
     uint64_t uploadFence = copyQueue->ExecuteCommandList(uploadCmdList);
 
-    
+    // Create a single light source
+    this->m_pointLights.reserve(this->MaxLights);
+    this->m_pointLights.emplace_back(PointLight());
+
     this->CreateLightModelPSO();
 
     copyQueue->WaitForFenceValue(uploadFence);
@@ -228,10 +235,10 @@ void BRDFLightingApp::RenderScene(Dx12Texture& sceneTexture)
     commandList->SetRenderTarget(this->m_sceneRenderTarget);
 
     // -- Set pipeline state ---
-    commandList->SetGraphicsRootSignature(*this->m_rootSignature[m_selectedLightModel]);
-    commandList->SetPipelineState(this->m_lightModelPso[m_selectedLightModel]);
+    commandList->SetGraphicsRootSignature(*this->m_rootSignature);
+    commandList->SetPipelineState(this->m_lightModelPso);
 
-    // Set Matrix data
+    // -- Set Shader Parameters ---
     XMMATRIX translationMatrix = XMMatrixTranslation(0.0f, 0.0f, 0.0f);
     XMMATRIX rotationMatrix = XMMatrixIdentity();
     XMMATRIX scaleMatrix = XMMatrixScaling(1.0f, 1.0f, 1.0f);
@@ -244,12 +251,18 @@ void BRDFLightingApp::RenderScene(Dx12Texture& sceneTexture)
 
     // -- Set Pipeline state parameters ---
     commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionalLightCB, this->m_sun);
 
     CameraData cameraData = {};
     cameraData.Position = this->m_camera.GetTranslation();
     commandList->SetGraphics32BitConstants(RootParameters::CameraDataCB, cameraData);
+
+    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
+    LightProperties lightProperties = {};
+    lightProperties.numPointLights = this->m_pointLights.size();
+    commandList->SetGraphics32BitConstants(RootParameters::LightPropertiesCB, lightProperties);
+
+    commandList->SetGraphicsDynamicStructuredBuffer(RootParameters::PointLightsSB, this->m_pointLights);
+
 
     // -- Draw Ambient Mesh ---
     this->m_sphereMesh->Draw(*commandList);
@@ -261,64 +274,38 @@ void BRDFLightingApp::RenderScene(Dx12Texture& sceneTexture)
 void BRDFLightingApp::RenderUI()
 {
     static bool showWindow = true;
-    ImGui::Begin("Options", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
-
-    ImGui::Combo("Lighting Mode", &this->m_selectedLightModel, "Phong");
+    ImGui::Begin("PBR Options", &showWindow, ImGuiWindowFlags_AlwaysAutoResize);
 
     ImGui::NewLine();
     ImGui::CollapsingHeader("Material Parameters");
 
-    switch (this->m_selectedLightModel)
-    {
-    case LightingModel::Phong:
+    ImGui::ColorEdit3("Albedo", reinterpret_cast<float*>(&this->m_material.Albedo));
+    ImGui::SliderFloat("Roughness", &this->m_material.Roughness, 0.0f, 1.0f);
 
-        ImGui::ColorEdit3("Material Ambient Colour", reinterpret_cast<float*>(&this->m_material.Ambient));
-        ImGui::ColorEdit3("Material Diffuse Colour", reinterpret_cast<float*>(&this->m_material.Diffuse));
-        ImGui::ColorEdit3("Material Specular Colour", reinterpret_cast<float*>(&this->m_material.Specular));
-        ImGui::DragFloat("Material Shininess", &this->m_material.Shininess, 0.1f, 0.0f, 256.0f);
+    ImGui::SliderFloat("Matallic", &this->m_material.Metallic, 0.0f, 1.0f);
+    ImGui::SliderFloat("Ambient Occlusion", &this->m_material.AmbientOcclusion, 0.0f, 1.0f);
 
-        break;
-    default:
-        ImGui::Text("No parameters");
-    }
 
     ImGui::NewLine();
 
+    ImGui::CollapsingHeader("Lighting");
 
-    ImGui::CollapsingHeader("Sun Parameters");
-    ImGui::ColorEdit3("Sun Ambient Colour", reinterpret_cast<float*>(&this->m_sun.AmbientColour));
-    ImGui::ColorEdit3("Sun Diffuse Colour", reinterpret_cast<float*>(&this->m_sun.DiffuseColour));
-    ImGui::ColorEdit3("Sun Specular Colour", reinterpret_cast<float*>(&this->m_sun.SpecularColour));
-    ImGui::DragFloat3("Sun Direction", reinterpret_cast<float*>(&this->m_sun.Direction), 0.01f, -1.0f, 1.0f);
+    ImGui::ColorEdit3("Colour", reinterpret_cast<float*>(&this->m_pointLights.front().Colour));
+    ImGui::DragFloat3("Position", reinterpret_cast<float*>(&this->m_pointLights.front().Position), 0.01f);
     ImGui::End();
 }
 
 void BRDFLightingApp::CreateLightModelPSO()
 {
-    this->m_rootSignature.resize(LightingModel::NumLightModels);
-    this->m_lightModelPso.resize(LightingModel::NumLightModels);
-
-    for (int i = 0; i < LightingModel::NumLightModels; i++)
-    {
-        switch (i)
-        {
-        case LightingModel::Phong:
-
-            CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-            rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-            rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-            rootParameters[RootParameters::DirectionalLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-            rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-
-            this->m_rootSignature[i] = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
-            this->m_lightModelPso[i] = this->CreatePipelineStateObject(*this->m_rootSignature[i], "PhongLighting");
-            break;
-
-        default:
-            LOG_CORE_WARN("Lighting model not implmented yet. Skipping");
-            continue;
-        }
-    }
+    CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
+    rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 1, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::LightPropertiesCB].InitAsConstants(sizeof(LightProperties) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[RootParameters::PointLightsSB].InitAsShaderResourceView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+   
+    this->m_rootSignature = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
+    this->m_lightModelPso = this->CreatePipelineStateObject(*this->m_rootSignature, "BRDFLighting");
 }
 
 std::unique_ptr<RootSignature> BRDFLightingApp::CreateRootSignature(
