@@ -62,6 +62,9 @@ struct PointLight
     XMFLOAT4 Position = { 0.0f, 0.0f, -5.0f, 1.0f };
     XMFLOAT4 Colour = { 1.0f, 1.0f, 1.0f, 1.0f };
 
+    float AttenuationConstant = 1.0f;
+    float AttenuationLinear = 0.09;
+    float AttenuationQuadratic = 0.032f;
 };
 
 struct LightProperties
@@ -292,6 +295,9 @@ void BRDFLightingApp::RenderUI()
 
     ImGui::ColorEdit3("Colour", reinterpret_cast<float*>(&this->m_pointLights.front().Colour));
     ImGui::DragFloat3("Position", reinterpret_cast<float*>(&this->m_pointLights.front().Position), 0.01f);
+    ImGui::Text("Attenuation Constant %f", this->m_pointLights.front().AttenuationConstant);
+    ImGui::Text("Attenuation Linear %f", this->m_pointLights.front().AttenuationLinear);
+    ImGui::Text("Attenuation Quadratic %f", this->m_pointLights.front().AttenuationQuadratic);
     ImGui::End();
 }
 

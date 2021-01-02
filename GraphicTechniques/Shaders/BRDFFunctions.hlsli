@@ -9,14 +9,14 @@
  */
 float DistributionGGX(float3 N, float3 H, float roughness)
 {
-    float a2 = roughness * roughness;
+    float alpha = roughness * roughness;
+    float alphaSq = alpha * alpha;
     float NdotH = saturate(dot(N, H));
     float NdotH2 = NdotH * NdotH;
 
-    float dom = NdotH2 * (a2 - 1) + 1;
-    dom = PI * dom * dom;
+    float denom = NdotH2 * (alphaSq - 1.0f) + 1.0f;
     
-    return a2 / dom;
+    return alphaSq / (PI * denom * denom);
 }
 
 /* -- Geometry Function ---
@@ -29,18 +29,18 @@ float DistributionGGX(float3 N, float3 H, float roughness)
  *   -- Kdirect = (A + 1)^2 / 8
  *   -- kIBL = A^2 / 2 
  */
-float GeometrySchlickGGX(float3 NdotV, float k)
+// Single term for separable Shclick-GGX below.
+float GeometrySchlickGGX(float NdotV, float k)
 {
-    float Dom = NdotV * (1 - k) + k;
-    
-    return NdotV / Dom;
+    return NdotV / (NdotV * (1.0f - k) + k);
 }
 
 /*
- * N = Normal
- * V = View
- * L = Lighting
- * k = Remmapped roughness(a) see above.
+ * Schlick-GGX approximation of geometric attenuation function using Smith's method.
+ *  N = Normal
+ *  V = View
+ *  L = Lighting
+ *  k = Remmapped roughness(a) see above.
  */
 float GeometrySmith(float NdotV, float NdotL, float k)
 {
@@ -55,7 +55,7 @@ float GeometrySmith(float NdotV, float NdotL, float k)
  * Describes the ratio of surface reflection at different surface angles.
  * F0 = base reflectivity fo the surface.
  */
-float FresnelSchlick(float cosTheta, float3 F0)
+float3 FresnelSchlick(float cosTheta, float3 F0)
 {
-    return F0 + (1 - F0) * pow(1 - cosTheta, 5);
+    return F0 + (1 - F0) * pow(1.0f - cosTheta, 5.0f);
 }

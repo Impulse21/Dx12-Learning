@@ -39,8 +39,8 @@ namespace Core
 	{
 		PbrMaterial(
 			DirectX::XMFLOAT4 albedo = { 1.0f, 1.0f, 1.0f, 1.0f },
-			float metallic = 1.0f,
-			float roughness = 1.0f,
+			float metallic = 0.0f,
+			float roughness = 0.0f,
 			float ambientOcclusion = 1.0f)
 			: Albedo(albedo)
 			, Metallic(metallic)
