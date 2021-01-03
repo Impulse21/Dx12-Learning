@@ -12,6 +12,7 @@
 #include "Dx12/UploadBuffer.h"
 #include "Dx12/GraphicResourceTypes.h"
 #include "Dx12/RootSignature.h"
+#include "Dx12/PanoToCubemapPSO.h"
 #include "RenderTarget.h"
 
 namespace Core
@@ -46,6 +47,10 @@ namespace Core
 		void LoadTextureFromFile(Dx12Texture& texture, std::wstring const& filename);
 
 		void GenerateMips(Dx12Texture& texture);
+		/**
+		 * Generate a cubemap texture from a panoramic (equirectangular) texture.
+		 */
+		void PanoToCubemap(Dx12Texture& cubemap, Dx12Texture const& pano);
 
 		void CopyTextureSubresource(
 			Dx12Texture& texture,
@@ -153,6 +158,17 @@ namespace Core
 			this->SetGraphicsDynamicConstantBuffer(rootParameterIndex, sizeof(T), &data);
 		}
 
+		/**
+		 * Set a set of 32-bit constants on the compute pipeline.
+		 */
+		void SetCompute32BitConstants(uint32_t rootParameterIndex, uint32_t numConstants, const void* constants);
+		template<typename T>
+		void SetCompute32BitConstants(uint32_t rootParameterIndex, const T& constants)
+		{
+			static_assert(sizeof(T) % sizeof(uint32_t) == 0, "Size of type must be a multiple of 4 bytes");
+			SetCompute32BitConstants(rootParameterIndex, sizeof(T) / sizeof(uint32_t), &constants);
+		}
+
 		void SetGraphicsRootShaderResourceView(uint32_t rootParameterIndex, Microsoft::WRL::ComPtr<ID3D12Resource> resource);
 		void SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
@@ -167,7 +183,20 @@ namespace Core
 			UINT numSubresources = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
 			const D3D12_SHADER_RESOURCE_VIEW_DESC* srv = nullptr);
 
+		/**
+		 * Set the UAV on the graphics pipeline.
+		 */
+		void SetUnorderedAccessView(
+			uint32_t rootParameterIndex,
+			uint32_t descrptorOffset,
+			Dx12Resrouce const& resource,
+			D3D12_RESOURCE_STATES stateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			UINT firstSubresource = 0,
+			UINT numSubresources = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+			const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav = nullptr);
+
 		void SetGraphicsRootSignature(RootSignature const& rootSignature);
+		void SetComputeRootSignature(RootSignature const& rootSignature);
 
 		void SetPipelineState(Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState);
 
@@ -210,6 +239,11 @@ namespace Core
 			int32_t baseVertex = 0,
 			uint32_t startInstance = 0);
 
+		/**
+		 * Dispatch a compute shader.
+		 */
+		void Dispatch(uint32_t numGroupsX, uint32_t numGroupsY = 1, uint32_t numGroupsZ = 1);
+
 		void SetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, ID3D12DescriptorHeap* heap);
 
 	private:
@@ -239,6 +273,8 @@ namespace Core
 		// Keep track of the currently bound root signatures to minimize root
 		// signature changes.
 		ID3D12RootSignature* m_rootSignature;
+
+		std::unique_ptr<PanoToCubemapPso> m_panoToCubeMapPso;
 
 	private:
 		static std::map<std::wstring, ID3D12Resource*> ms_textureCache;

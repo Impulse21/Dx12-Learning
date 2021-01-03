@@ -25,7 +25,7 @@ namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
 
-namespace RootParameters
+namespace PbrRootParameters
 {
     enum
     {
@@ -217,11 +217,11 @@ void ModelTestApp::RenderScene(Dx12Texture& sceneTexture)
 
     Matrices matrices;
     ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionLightCB, this->m_directionLighting);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::MatricesCB, matrices);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::MaterialCB, this->m_material);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::DirectionLightCB, this->m_directionLighting);
 
-    commandList->SetShaderResourceView(RootParameters::Textures, 0, *this->m_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    commandList->SetShaderResourceView(PbrRootParameters::Textures, 0, *this->m_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     this->m_cubeMesh->Draw(*commandList);
 
@@ -270,17 +270,17 @@ void ModelTestApp::CreatePipelineStateObjects()
 
 	CD3DX12_DESCRIPTOR_RANGE1 descriptorRage(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
-	CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-    rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParameters[RootParameters::DirectionLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-	rootParameters[RootParameters::Textures].InitAsDescriptorTable(1, &descriptorRage, D3D12_SHADER_VISIBILITY_PIXEL);
+	CD3DX12_ROOT_PARAMETER1 rootParameters[PbrRootParameters::NumRootParameters];
+    rootParameters[PbrRootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[PbrRootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[PbrRootParameters::DirectionLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParameters[PbrRootParameters::Textures].InitAsDescriptorTable(1, &descriptorRage, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
 	rootSignatureDescription.Init_1_1(
-		RootParameters::NumRootParameters,
+		PbrRootParameters::NumRootParameters,
 		rootParameters,
 		1,
 		&linearRepeatSampler,

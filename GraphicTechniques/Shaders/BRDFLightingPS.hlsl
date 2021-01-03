@@ -93,6 +93,7 @@ float4 main(VSOutput input) : SV_TARGET
     for (uint i = 0; i < LightProperticesCB.numPointLights; i++)
     {
         PointLight pointLight = PointLightsSB[i];
+        
         // Light direction;   
         float3 L = normalize(pointLight.PositionWS - input.positionWS);
    

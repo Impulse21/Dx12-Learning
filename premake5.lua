@@ -69,6 +69,7 @@ group "Core"
 			"Core/**.h",
 			"Core/**.inl",
 			"Core/**.cpp",
+			"Core/Shaders/**CS.hlsl"
 		}
 
 		libdirs 
@@ -96,6 +97,11 @@ group "Core"
 			"Imgui"
 			-- "3rdParty/dxc_2020_10-22/lib/dxcompiler.lib"
 		}
+
+		filter { "files:**CS.hlsl" }
+			shadertype "Compute"
+			shadermodel "6.0"
+		filter { }
 
 group "GraphicTechniques"
 	project "PhongLighting"
@@ -197,6 +203,48 @@ group "GraphicTechniques"
 		includedirs
 		{
 			"GraphicTechniques/BRDFLighting",
+			"Core",
+
+			"ThridParty/spdlog/include",
+			"ThridParty/imgui",
+		}
+
+		links 
+		{ 
+			"Core",
+			"GLFW",
+			"Imgui",
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+		}
+
+		filter { "files:**VS.hlsl" }
+			shadertype "Vertex"
+			shadermodel "6.0"
+		filter { }
+
+		filter { "files:**PS.hlsl" }
+			shadertype "Pixel"
+			shadermodel "6.0"
+		filter { }
+
+	project "BRDFLightingIBL"
+		kind "ConsoleApp"
+		language "C++"
+		cppdialect "C++17"
+
+		files
+		{
+			"GraphicTechniques/BRDFLightingIBL/**.h",
+			"GraphicTechniques/BRDFLightingIBL/**.cpp",
+			"GraphicTechniques/Shaders/BRDFLighting**.hlsl",
+			"GraphicTechniques/Shaders/BRDFFunctions.hlsli",
+		}
+
+		includedirs
+		{
+			"GraphicTechniques/BRDFLightingIBL",
 			"Core",
 
 			"ThridParty/spdlog/include",

@@ -13,6 +13,8 @@
 
 #include "Dx12RenderDevice.h"
 
+#include "MathHelpers.h"
+
 namespace fs = std::filesystem;
 
 using namespace Core;
@@ -290,6 +292,121 @@ void Core::CommandList::GenerateMips(Dx12Texture& texture)
 	// TODO:
 }
 
+void Core::CommandList::PanoToCubemap(Dx12Texture& cubemap, Dx12Texture const& pano)
+{
+	if (this->m_type == D3D12_COMMAND_LIST_TYPE_COPY)
+	{
+		if (this->m_computeCommandList)
+		{
+			this->m_computeCommandList =
+				this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COMPUTE)->GetCommandList();
+
+			this->m_computeCommandList->PanoToCubemap(cubemap, pano);
+			return;
+		}
+	}
+
+	if (!this->m_panoToCubeMapPso)
+	{
+		this->m_panoToCubeMapPso = std::make_unique<PanoToCubemapPso>(this->m_renderDevice);
+	}
+	auto cubemapResource = cubemap.GetDx12Resource();
+	if (!cubemapResource)
+	{
+		return;
+	}
+
+
+	CD3DX12_RESOURCE_DESC cubemapDesc(cubemapResource->GetDesc());
+
+	auto stagingResource = cubemapResource;
+	Dx12Texture stagingTexture(this->m_renderDevice, stagingResource);
+
+	// If the passed-in resource does not allow for UAV access
+	// then create a staging resource that is used to generate
+	// the cubemap.
+	if ((cubemapDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) == 0)
+	{
+		auto stagingDesc = cubemapDesc;
+		stagingDesc.Format = Dx12Texture::GetUAVCompatableFormat(cubemapDesc.Format);
+		stagingDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+		ThrowIfFailed(
+			this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
+				&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+				D3D12_HEAP_FLAG_NONE,
+				&stagingDesc,
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				nullptr,
+				IID_PPV_ARGS(&stagingResource)));
+
+		ResourceStateTracker::AddGlobalResourceState(stagingResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST);
+
+		SetD3DDebugName(stagingResource, L"Pano to Cubemap Staging Texture");
+
+		stagingTexture.SetDx12Resource(stagingResource);
+		stagingTexture.CreateViews();
+
+		this->CopyResource(stagingTexture, cubemap);
+	}
+
+	this->TransitionBarrier(stagingTexture.GetDx12Resource(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+	this->m_commandList->SetPipelineState(this->m_panoToCubeMapPso->GetPipelineState().Get());
+	this->SetComputeRootSignature(this->m_panoToCubeMapPso->GetRootSignature());
+
+	PanoToCubemapCB panoToCubemapCB;
+
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = Dx12Texture::GetUAVCompatableFormat(cubemapDesc.Format);
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+	uavDesc.Texture2DArray.FirstArraySlice = 0;
+	uavDesc.Texture2DArray.ArraySize = 6;
+
+	for (uint32_t mipSlice = 0; mipSlice < cubemapDesc.MipLevels; )
+	{
+		// Maximum number of mips to generate per pass is 5.
+		uint32_t numMips = std::min<uint32_t>(5, cubemapDesc.MipLevels - mipSlice);
+
+		panoToCubemapCB.FirstMip = mipSlice;
+		panoToCubemapCB.CubemapSize = std::max<uint32_t>(static_cast<uint32_t>(cubemapDesc.Width), cubemapDesc.Height) >> mipSlice;
+		panoToCubemapCB.NumMips = numMips;
+
+		this->SetCompute32BitConstants(PanoToCubemapRS::PanoToCubemapCB, panoToCubemapCB);
+
+		this->SetShaderResourceView(PanoToCubemapRS::SrcTexture, 0, pano, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+		for (uint32_t mip = 0; mip < numMips; ++mip)
+		{
+			uavDesc.Texture2DArray.MipSlice = mipSlice + mip;
+			this->SetUnorderedAccessView(
+				PanoToCubemapRS::DstMips, mip, stagingTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 0, 0, &uavDesc);
+		}
+
+		if (numMips < 5)
+		{
+			// Pad unused mips. This keeps DX12 runtime happy.
+			this->m_dynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StageDescriptors(
+				PanoToCubemapRS::DstMips,
+				panoToCubemapCB.NumMips,
+				5 - numMips,
+				this->m_panoToCubeMapPso->GetDefaultUAV());
+		}
+
+		this->Dispatch(
+			Math::DivideByMultiple(panoToCubemapCB.CubemapSize, 16),
+			Math::DivideByMultiple(panoToCubemapCB.CubemapSize, 16),
+			6);
+
+		mipSlice += numMips;
+	}
+
+	if (stagingResource != cubemapResource)
+	{
+		CopyResource(cubemap, stagingTexture);
+	}
+}
+
 void Core::CommandList::CopyTextureSubresource(
 	Dx12Texture& texture,
 	uint32_t firstSubResource,
@@ -551,12 +668,47 @@ void Core::CommandList::SetGraphicsDynamicConstantBuffer(uint32_t rootParameterI
 	this->m_commandList->SetGraphicsRootConstantBufferView(rootParameterIndex, heapAllococation.Gpu);
 }
 
+void Core::CommandList::SetCompute32BitConstants(uint32_t rootParameterIndex, uint32_t numConstants, const void* constants)
+{
+	this->m_commandList->SetComputeRoot32BitConstants(rootParameterIndex, numConstants, constants, 0);
+}
+
 void Core::CommandList::SetGraphicsRootShaderResourceView(
 	uint32_t rootParameterIndex,
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource)
 {
 	this->m_commandList->SetGraphicsRootShaderResourceView(0, resource->GetGPUVirtualAddress());
 	this->TrackResource(resource);
+}
+
+void Core::CommandList::SetUnorderedAccessView(
+	uint32_t rootParameterIndex,
+	uint32_t descrptorOffset,
+	Dx12Resrouce const& resource,
+	D3D12_RESOURCE_STATES stateAfter,
+	UINT firstSubresource,
+	UINT numSubresources,
+	const D3D12_UNORDERED_ACCESS_VIEW_DESC* uav)
+{
+	if (numSubresources < D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+	{
+		for (uint32_t i = 0; i < numSubresources; ++i)
+		{
+			this->TransitionBarrier(resource.GetDx12Resource(), stateAfter, firstSubresource + i);
+		}
+	}
+	else
+	{
+		this->TransitionBarrier(resource.GetDx12Resource(), stateAfter);
+	}
+
+	this->m_dynamicDescriptorHeap[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]->StageDescriptors(
+		rootParameterIndex,
+		descrptorOffset,
+		1,
+		resource.GetUnorderedAccessView(uav));
+
+	this->TrackResource(resource.GetDx12Resource());
 }
 
 void Core::CommandList::SetGraphicsRootSignature(RootSignature const& rootSignature)
@@ -574,8 +726,27 @@ void Core::CommandList::SetGraphicsRootSignature(RootSignature const& rootSignat
 		this->m_dynamicDescriptorHeap[i]->ParseRootSignature(rootSignature);
 	}
 
-	this->m_commandList->SetGraphicsRootSignature(m_rootSignature);
-	this->TrackResource(m_rootSignature);
+	this->m_commandList->SetGraphicsRootSignature(this->m_rootSignature);
+	this->TrackResource(this->m_rootSignature);
+}
+
+void Core::CommandList::SetComputeRootSignature(RootSignature const& rootSignature)
+{
+	auto d3d12RootSignature = rootSignature.GetRootSignature().Get();
+	if (d3d12RootSignature == this->m_rootSignature)
+	{
+		//return;
+	}
+
+	this->m_rootSignature = d3d12RootSignature;
+
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i]->ParseRootSignature(rootSignature);
+	}
+
+	this->m_commandList->SetComputeRootSignature(this->m_rootSignature);
+	this->TrackResource(this->m_rootSignature);
 }
 
 void Core::CommandList::SetGraphicsRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
@@ -726,6 +897,18 @@ void Core::CommandList::DrawIndexed(
 	}
 
 	this->m_commandList->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, startInstance);
+}
+
+void Core::CommandList::Dispatch(uint32_t numGroupsX, uint32_t numGroupsY, uint32_t numGroupsZ)
+{
+	this->FlushResourceBarriers();
+
+	for (int i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
+	{
+		this->m_dynamicDescriptorHeap[i]->CommitStagedDescriptorsForDispatch(*this);
+	}
+
+	this->m_commandList->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
 
 void Core::CommandList::SetDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, ID3D12DescriptorHeap* heap)

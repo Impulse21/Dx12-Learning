@@ -36,7 +36,7 @@ static std::vector<VertexPosTex> gVertices =
 
 static std::vector<uint16_t> gIndices = { 0, 1, 2 };
 
-namespace RootParameters
+namespace PbrRootParameters
 {
     enum
     {
@@ -206,7 +206,7 @@ void LightingApp::RenderScene(Dx12Texture& sceneTexture)
     commandList->SetGraphicsRootSignature(*this->m_rootSignature);
     commandList->SetPipelineState(this->m_pso);
 
-    commandList->SetShaderResourceView(RootParameters::Textures, 0, *this->m_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    commandList->SetShaderResourceView(PbrRootParameters::Textures, 0, *this->m_texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     commandList->SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->SetVertexBuffer(*this->m_vertexBuffer);
@@ -242,14 +242,14 @@ void LightingApp::CreatePipelineStateObjects()
 
 	CD3DX12_DESCRIPTOR_RANGE1 descriptorRage(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
-	CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-	rootParameters[RootParameters::Textures].InitAsDescriptorTable(1, &descriptorRage, D3D12_SHADER_VISIBILITY_PIXEL);
+	CD3DX12_ROOT_PARAMETER1 rootParameters[PbrRootParameters::NumRootParameters];
+	rootParameters[PbrRootParameters::Textures].InitAsDescriptorTable(1, &descriptorRage, D3D12_SHADER_VISIBILITY_PIXEL);
 
 	CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDescription;
 	rootSignatureDescription.Init_1_1(
-		RootParameters::NumRootParameters,
+		PbrRootParameters::NumRootParameters,
 		rootParameters,
 		1,
 		&linearRepeatSampler,

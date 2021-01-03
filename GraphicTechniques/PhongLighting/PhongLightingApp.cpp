@@ -34,7 +34,7 @@ namespace LightingModel
     };
 }
 
-namespace RootParameters
+namespace PbrRootParameters
 {
     enum
     {
@@ -243,13 +243,13 @@ void PhongLightingApp::RenderScene(Dx12Texture& sceneTexture)
     ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
 
     // -- Set Pipeline state parameters ---
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::DirectionalLightCB, this->m_sun);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::MatricesCB, matrices);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::MaterialCB, this->m_material);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::DirectionalLightCB, this->m_sun);
 
     CameraData cameraData = {};
     cameraData.Position = this->m_camera.GetTranslation();
-    commandList->SetGraphics32BitConstants(RootParameters::CameraDataCB, cameraData);
+    commandList->SetGraphics32BitConstants(PbrRootParameters::CameraDataCB, cameraData);
 
     // -- Draw Ambient Mesh ---
     this->m_sphereMesh->Draw(*commandList);
@@ -304,13 +304,13 @@ void PhongLightingApp::CreateLightModelPSO()
         {
         case LightingModel::Phong:
 
-            CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-            rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-            rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-            rootParameters[RootParameters::DirectionalLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-            rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+            CD3DX12_ROOT_PARAMETER1 rootParameters[PbrRootParameters::NumRootParameters];
+            rootParameters[PbrRootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+            rootParameters[PbrRootParameters::MaterialCB].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+            rootParameters[PbrRootParameters::DirectionalLightCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+            rootParameters[PbrRootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
 
-            this->m_rootSignature[i] = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
+            this->m_rootSignature[i] = this->CreateRootSignature(PbrRootParameters::NumRootParameters, rootParameters);
             this->m_lightModelPso[i] = this->CreatePipelineStateObject(*this->m_rootSignature[i], "PhongLighting");
             break;
 

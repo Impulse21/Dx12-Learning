@@ -25,7 +25,7 @@ namespace fs = std::filesystem;
 using namespace Core;
 using namespace DirectX;
 
-namespace RootParameters
+namespace PbrRootParameters
 {
     enum
     {
@@ -63,8 +63,8 @@ struct PointLight
     XMFLOAT4 Colour = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     float AttenuationConstant = 1.0f;
-    float AttenuationLinear = 0.09;
-    float AttenuationQuadratic = 0.032f;
+    float AttenuationLinear = 0.07;
+    float AttenuationQuadratic = 0.017f;
 };
 
 struct LightProperties
@@ -253,18 +253,18 @@ void BRDFLightingApp::RenderScene(Dx12Texture& sceneTexture)
     ComputeMatrices(worldMatrix, viewMatrix, viewProjectionMatrix, matrices);
 
     // -- Set Pipeline state parameters ---
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MatricesCB, matrices);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::MatricesCB, matrices);
 
     CameraData cameraData = {};
     cameraData.Position = this->m_camera.GetTranslation();
-    commandList->SetGraphics32BitConstants(RootParameters::CameraDataCB, cameraData);
+    commandList->SetGraphics32BitConstants(PbrRootParameters::CameraDataCB, cameraData);
 
-    commandList->SetGraphicsDynamicConstantBuffer(RootParameters::MaterialCB, this->m_material);
+    commandList->SetGraphicsDynamicConstantBuffer(PbrRootParameters::MaterialCB, this->m_material);
     LightProperties lightProperties = {};
     lightProperties.numPointLights = this->m_pointLights.size();
-    commandList->SetGraphics32BitConstants(RootParameters::LightPropertiesCB, lightProperties);
+    commandList->SetGraphics32BitConstants(PbrRootParameters::LightPropertiesCB, lightProperties);
 
-    commandList->SetGraphicsDynamicStructuredBuffer(RootParameters::PointLightsSB, this->m_pointLights);
+    commandList->SetGraphicsDynamicStructuredBuffer(PbrRootParameters::PointLightsSB, this->m_pointLights);
 
 
     // -- Draw Ambient Mesh ---
@@ -303,14 +303,14 @@ void BRDFLightingApp::RenderUI()
 
 void BRDFLightingApp::CreateLightModelPSO()
 {
-    CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameters::NumRootParameters];
-    rootParameters[RootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-    rootParameters[RootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 1, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-    rootParameters[RootParameters::MaterialCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParameters[RootParameters::LightPropertiesCB].InitAsConstants(sizeof(LightProperties) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
-    rootParameters[RootParameters::PointLightsSB].InitAsShaderResourceView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    CD3DX12_ROOT_PARAMETER1 rootParameters[PbrRootParameters::NumRootParameters];
+    rootParameters[PbrRootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[PbrRootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 1, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[PbrRootParameters::MaterialCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[PbrRootParameters::LightPropertiesCB].InitAsConstants(sizeof(LightProperties) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[PbrRootParameters::PointLightsSB].InitAsShaderResourceView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
    
-    this->m_rootSignature = this->CreateRootSignature(RootParameters::NumRootParameters, rootParameters);
+    this->m_rootSignature = this->CreateRootSignature(PbrRootParameters::NumRootParameters, rootParameters);
     this->m_lightModelPso = this->CreatePipelineStateObject(*this->m_rootSignature, "BRDFLighting");
 }
 

@@ -70,6 +70,7 @@ namespace Core
 		 */
 		virtual D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView(const D3D12_UNORDERED_ACCESS_VIEW_DESC* uavDesc = nullptr) const = 0;
 
+		static DXGI_FORMAT GetUAVCompatableFormat(DXGI_FORMAT format);
 
 	protected:
 		Dx12Resrouce() = default;

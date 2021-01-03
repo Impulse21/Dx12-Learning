@@ -158,5 +158,31 @@ Core::Dx12Resrouce::Dx12Resrouce(
 		));
 
 	ResourceStateTracker::AddGlobalResourceState(this->m_d3dResouce.Get(), D3D12_RESOURCE_STATE_COMMON);
-
 }
+
+
+DXGI_FORMAT Dx12Resrouce::GetUAVCompatableFormat(DXGI_FORMAT format)
+{
+    DXGI_FORMAT uavFormat = format;
+
+    switch (format)
+    {
+    case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8X8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+    case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+    case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+        uavFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+        break;
+    case DXGI_FORMAT_R32_TYPELESS:
+    case DXGI_FORMAT_D32_FLOAT:
+        uavFormat = DXGI_FORMAT_R32_FLOAT;
+        break;
+    }
+
+    return uavFormat;
+}
+

@@ -1,3 +1,5 @@
+#ifndef __BRDF_FUNCTIONS_HLSLI__
+#define __BRDF_FUNCTIONS_HLSLI__
 
 #define PI 3.14159265359f
 
@@ -59,3 +61,5 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
 {
     return F0 + (1 - F0) * pow(1.0f - cosTheta, 5.0f);
 }
+
+#endif
