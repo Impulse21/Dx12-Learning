@@ -59,7 +59,12 @@ float GeometrySmith(float NdotV, float NdotL, float k)
  */
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
-    return F0 + (1 - F0) * pow(1.0f - cosTheta, 5.0f);
+    return F0 + (1.0f - F0) * pow(1.0f - cosTheta, 5.0f);
 }
 
+float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
+{
+    float alpha = 1.0f - roughness;
+    return F0 + (max(float3(alpha, alpha, alpha), F0) - F0) * pow(max(1.0f - cosTheta, 0.0f), 5.0f);
+}
 #endif

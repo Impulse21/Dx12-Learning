@@ -52,7 +52,11 @@ ConstantBuffer<LightProperties> LightProperticesCB: register(b3);
 
 StructuredBuffer<PointLight> PointLightsSB: register(t0);
 
-// TODO: Add Instance and Texture support;
+#ifdef ENABLE_IBL
+TextureCube irradianceMap : register(t1);
+
+SamplerState LinearRepeatSampler : register(s0);
+#endif
 
 // -- Pixel input Definition ---
 struct VSOutput
@@ -137,7 +141,6 @@ float4 main(VSOutput input) : SV_TARGET
         directLighting += (diffuseBRDF + specualrBRDF) * radiance * NdotL;
     }
     
-    // TODO: Calculate Ambient lighting (IBL)
     float3 ambientLighting = float3(0.03f, 0.03f, 0.03f) * albedo * ao;
     return float4(directLighting + ambientLighting, 1.0f);
     
