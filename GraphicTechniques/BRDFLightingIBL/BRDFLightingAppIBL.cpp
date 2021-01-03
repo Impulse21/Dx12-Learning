@@ -48,6 +48,12 @@ namespace SkyboxRootParammeters
     };
 }
 
+enum class SkyboxState
+{
+    Disable = 0,
+    DrawCubemap,
+    DrawIrrandanceMap,
+};
 struct Matrices
 {
     XMMATRIX ModelMatrix;
@@ -119,7 +125,7 @@ private:
         std::string const& shaderName);
 
 private:
-    RenderTarget m_sceneRenderTarget;
+    RenderTarget m_hdrRenderTarget;
 
     std::array<FLOAT, 4> m_clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
     Camera m_camera;
@@ -136,6 +142,7 @@ private:
     // Index buffer for the cube
     std::unique_ptr<Dx12Texture> m_cathedralTexture = nullptr;
     std::unique_ptr<Dx12Texture> m_cathedralCubeMap = nullptr;
+    std::unique_ptr<Dx12Texture> m_cathedralIrradianceMap = nullptr;
 
     PbrMaterial m_material = PbrMaterial({1.0f, 0.0f, 0.0f, 1.0f});
 
@@ -170,12 +177,13 @@ void BRDFLightingIBLApp::LoadContent()
     // Setup Render Target
     {
         // Create an HDR intermediate render target.
-        DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        // TODOL HDR Format and tone mapping
+        DXGI_FORMAT hdrFormat = DXGI_FORMAT_R8G8B8A8_UNORM; //DXGI_FORMAT_R16G16B16A16_FLOAT;
 
         // Create an off-screen render target with a single color buffer and a depth buffer.
         auto colorResourceDesc =
             CD3DX12_RESOURCE_DESC::Tex2D(
-                format,
+                hdrFormat,
                 this->m_window->GetWidth(),
                 this->m_window->GetHeight());
 
@@ -190,10 +198,10 @@ void BRDFLightingIBLApp::LoadContent()
         colorClearValue.Color[2] = this->m_clearValue[2];
         colorClearValue.Color[3] = this->m_clearValue[3];
 
-        Dx12Texture colourTexture(this->m_renderDevice, colorResourceDesc, &colorClearValue);
-        colourTexture.CreateViews();
+        Dx12Texture hdrTexture(this->m_renderDevice, colorResourceDesc, &colorClearValue);
+        hdrTexture.CreateViews();
 
-        this->m_sceneRenderTarget.AttachTexture(AttachmentPoint::Color0, colourTexture);
+        this->m_hdrRenderTarget.AttachTexture(AttachmentPoint::Color0, hdrTexture);
     }
 
     {
@@ -214,7 +222,7 @@ void BRDFLightingIBLApp::LoadContent()
         Dx12Texture depthTexture(this->m_renderDevice, depthDesc, &optimizedClearValue);
         depthTexture.CreateViews();
 
-        this->m_sceneRenderTarget.AttachTexture(AttachmentPoint::DepthStencil, depthTexture);
+        this->m_hdrRenderTarget.AttachTexture(AttachmentPoint::DepthStencil, depthTexture);
     }
 
     {
@@ -231,6 +239,10 @@ void BRDFLightingIBLApp::LoadContent()
 
         this->m_cathedralCubeMap = std::make_unique<Dx12Texture>(this->m_renderDevice, cubemapDesc);
         uploadCmdList->PanoToCubemap(*this->m_cathedralCubeMap, *this->m_cathedralTexture);
+
+        // Generate Irradiance map
+        this->m_cathedralIrradianceMap = std::make_unique<Dx12Texture>(this->m_renderDevice, cubemapDesc);
+        uploadCmdList->PanoToCubemap(*this->m_cathedralIrradianceMap, *this->m_cathedralCubeMap);
     }
 
     // Create an inverted (reverse winding order) cube so the insides are not clipped.
@@ -257,11 +269,11 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
     auto commandList = this->m_renderDevice->GetQueue()->GetCommandList();
 
     commandList->ClearRenderTarget(
-        this->m_sceneRenderTarget.GetTexture(Color0),
+        this->m_hdrRenderTarget.GetTexture(Color0),
         this->m_clearValue);
 
     commandList->ClearDepthStencilTexture(
-            this->m_sceneRenderTarget.GetTexture(AttachmentPoint::DepthStencil),
+            this->m_hdrRenderTarget.GetTexture(AttachmentPoint::DepthStencil),
             D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL);
 
     static CD3DX12_VIEWPORT viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, this->m_window->GetWidth(), this->m_window->GetHeight());
@@ -271,7 +283,7 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
     commandList->SetScissorRect(rect);
 
     // Set Render Target
-    commandList->SetRenderTarget(this->m_sceneRenderTarget);
+    commandList->SetRenderTarget(this->m_hdrRenderTarget);
 
     // Render Skybox
     {
@@ -285,7 +297,7 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
         commandList->SetGraphicsDynamicConstantBuffer(0, viewProjectionMatrix);
 
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Format = this->m_cathedralCubeMap->GetDx12Resource()->GetDesc().Format;
+        srvDesc.Format = this->m_cathedralIrradianceMap->GetDx12Resource()->GetDesc().Format;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
         srvDesc.TextureCube.MipLevels = (UINT)-1; // Use all mips.
@@ -293,7 +305,7 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
         commandList->SetShaderResourceView(
             SkyboxRootParammeters::Textures,
             0,
-            *this->m_cathedralCubeMap,
+            *this->m_cathedralIrradianceMap,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             0,
             D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, &srvDesc);
@@ -335,7 +347,7 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
     this->m_sphereMesh->Draw(*commandList);
 
     this->m_renderDevice->GetQueue()->ExecuteCommandList(commandList);
-    sceneTexture.SetDx12Resource(this->m_sceneRenderTarget.GetTexture(Color0).GetDx12Resource());
+    sceneTexture.SetDx12Resource(this->m_hdrRenderTarget.GetTexture(Color0).GetDx12Resource());
 }
 
 void BRDFLightingIBLApp::RenderUI()
@@ -471,8 +483,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> BRDFLightingIBLApp::CreatePipelineSt
     pipelineStateStream.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     pipelineStateStream.VS = CD3DX12_SHADER_BYTECODE(vertexByteData.data(), vertexByteData.size());
     pipelineStateStream.PS = CD3DX12_SHADER_BYTECODE(pixelByteData.data(), pixelByteData.size());
-    pipelineStateStream.DSVFormat = this->m_sceneRenderTarget.GetDepthStencilFormat();
-    pipelineStateStream.RTVFormats = this->m_sceneRenderTarget.GetRenderTargetForamts();
+    pipelineStateStream.DSVFormat = this->m_hdrRenderTarget.GetDepthStencilFormat();
+    pipelineStateStream.RTVFormats = this->m_hdrRenderTarget.GetRenderTargetForamts();
 
 
     D3D12_PIPELINE_STATE_STREAM_DESC pipelineStateStreamDesc =

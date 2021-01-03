@@ -13,6 +13,7 @@
 #include "Dx12/GraphicResourceTypes.h"
 #include "Dx12/RootSignature.h"
 #include "Dx12/PanoToCubemapPSO.h"
+#include "Dx12/CubemapToIrradianceMapPSO.h"
 #include "RenderTarget.h"
 
 namespace Core
@@ -51,6 +52,8 @@ namespace Core
 		 * Generate a cubemap texture from a panoramic (equirectangular) texture.
 		 */
 		void PanoToCubemap(Dx12Texture& cubemap, Dx12Texture const& pano);
+
+		void GenerateIrradianceMap(Dx12Texture& irmapTexture, Dx12Texture const& cubemapTexture);
 
 		void CopyTextureSubresource(
 			Dx12Texture& texture,
@@ -275,6 +278,7 @@ namespace Core
 		ID3D12RootSignature* m_rootSignature;
 
 		std::unique_ptr<PanoToCubemapPso> m_panoToCubeMapPso;
+		std::unique_ptr<CubemapToIrradianceMapPso> m_cubemapToIrradianceMapPso;
 
 	private:
 		static std::map<std::wstring, ID3D12Resource*> ms_textureCache;
