@@ -14,6 +14,9 @@
 #include "Dx12/RootSignature.h"
 #include "Dx12/PanoToCubemapPSO.h"
 #include "Dx12/CubemapToIrradianceMapPSO.h"
+#include "Dx12/GenerateSpecBrdfLutPso.h"
+#include "Dx12/CubemapToSpecularMapPSO.h"
+
 #include "RenderTarget.h"
 
 namespace Core
@@ -54,6 +57,8 @@ namespace Core
 		void PanoToCubemap(Dx12Texture& cubemap, Dx12Texture const& pano);
 
 		void GenerateIrradianceMap(Dx12Texture& irmapTexture, Dx12Texture const& cubemapTexture);
+		void GenerateSpecularMap(Dx12Texture& specTexture, Dx12Texture const& cubemapTexture);
+		void GenerateSpecularBrdfLut(Dx12Texture& specBrdfLut);
 
 		void CopyTextureSubresource(
 			Dx12Texture& texture,
@@ -279,6 +284,8 @@ namespace Core
 
 		std::unique_ptr<PanoToCubemapPso> m_panoToCubeMapPso;
 		std::unique_ptr<CubemapToIrradianceMapPso> m_cubemapToIrradianceMapPso;
+		std::unique_ptr<GenerateSpecBrdfLutPso> m_generateSpecularBrdfLutPso;
+		std::unique_ptr<CubemapToSpecularMapPso> m_cubemapToSpecularMapPso;
 
 	private:
 		static std::map<std::wstring, ID3D12Resource*> ms_textureCache;

@@ -416,7 +416,7 @@ void Core::CommandList::GenerateIrradianceMap(Dx12Texture& irmapTexture, Dx12Tex
 			this->m_computeCommandList =
 				this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COMPUTE)->GetCommandList();
 
-			this->m_computeCommandList->PanoToCubemap(irmapTexture, cubemapTexture);
+			this->m_computeCommandList->GenerateIrradianceMap(irmapTexture, cubemapTexture);
 			return;
 		}
 	}
@@ -476,11 +476,9 @@ void Core::CommandList::GenerateIrradianceMap(Dx12Texture& irmapTexture, Dx12Tex
 	uavDesc.Texture2DArray.FirstArraySlice = 0;
 	uavDesc.Texture2DArray.ArraySize = 6;
 
-	this->SetShaderResourceView(PanoToCubemapRS::SrcTexture, 0, cubemapTexture, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	this->SetShaderResourceView(CubemapToIrradianceMapRS::SrcTexture, 0, cubemapTexture, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 	this->SetUnorderedAccessView(
-		PanoToCubemapRS::DstMips, 0, stagingTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 0, 0, &uavDesc);
-
-
+		CubemapToIrradianceMapRS::OutputTexture, 0, stagingTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 0, 0, &uavDesc);
 
 	this->Dispatch(
 		Math::DivideByMultiple(static_cast<uint32_t>(irmapDesc.Width), 32),
@@ -490,6 +488,172 @@ void Core::CommandList::GenerateIrradianceMap(Dx12Texture& irmapTexture, Dx12Tex
 	if (stagingResource != irmapResource)
 	{
 		this->CopyResource(irmapTexture, stagingTexture);
+	}
+}
+
+void Core::CommandList::GenerateSpecularMap(Dx12Texture& specTexture, Dx12Texture const& cubemapTexture)
+{
+	if (this->m_type == D3D12_COMMAND_LIST_TYPE_COPY)
+	{
+		if (this->m_computeCommandList)
+		{
+			this->m_computeCommandList =
+				this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COMPUTE)->GetCommandList();
+
+			this->m_computeCommandList->GenerateSpecularMap(specTexture, cubemapTexture);
+			return;
+		}
+	}
+
+	if (!this->m_cubemapToSpecularMapPso)
+	{
+		this->m_cubemapToSpecularMapPso = std::make_unique<CubemapToSpecularMapPso>(this->m_renderDevice);
+	}
+	auto specMapResource = specTexture.GetDx12Resource();
+	if (!specMapResource)
+	{
+		return;
+	}
+
+
+	CD3DX12_RESOURCE_DESC irmapDesc(specMapResource->GetDesc());
+
+	auto stagingResource = specMapResource;
+	Dx12Texture stagingTexture(this->m_renderDevice, stagingResource);
+
+	// If the passed-in resource does not allow for UAV access
+	// then create a staging resource that is used to generate
+	// the cubemap.
+	if ((irmapDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) == 0)
+	{
+		auto stagingDesc = irmapDesc;
+		stagingDesc.Format = Dx12Texture::GetUAVCompatableFormat(irmapDesc.Format);
+		stagingDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+		ThrowIfFailed(
+			this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
+				&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+				D3D12_HEAP_FLAG_NONE,
+				&stagingDesc,
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				nullptr,
+				IID_PPV_ARGS(&stagingResource)));
+
+		ResourceStateTracker::AddGlobalResourceState(stagingResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST);
+
+		SetD3DDebugName(stagingResource, L"Cube map to Specular map Staging Texture");
+
+		stagingTexture.SetDx12Resource(stagingResource);
+		stagingTexture.CreateViews();
+
+		this->CopyResource(stagingTexture, specTexture);
+	}
+
+	this->TransitionBarrier(stagingTexture.GetDx12Resource(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+	this->m_commandList->SetPipelineState(this->m_cubemapToSpecularMapPso->GetPipelineState().Get());
+	this->SetComputeRootSignature(this->m_cubemapToSpecularMapPso->GetRootSignature());
+
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = Dx12Texture::GetUAVCompatableFormat(irmapDesc.Format);
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+	uavDesc.Texture2DArray.FirstArraySlice = 0;
+	uavDesc.Texture2DArray.ArraySize = 6;
+
+	this->SetShaderResourceView(CubemapToIrradianceMapRS::SrcTexture, 0, cubemapTexture, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	this->SetUnorderedAccessView(
+		CubemapToIrradianceMapRS::OutputTexture, 0, stagingTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 0, 0, &uavDesc);
+
+	this->Dispatch(
+		Math::DivideByMultiple(static_cast<uint32_t>(irmapDesc.Width), 32),
+		Math::DivideByMultiple(static_cast<uint32_t>(irmapDesc.Height), 32),
+		6);
+
+	if (stagingResource != specMapResource)
+	{
+		this->CopyResource(specTexture, stagingTexture);
+	}
+}
+
+void Core::CommandList::GenerateSpecularBrdfLut(Dx12Texture& specBrdfLutTexture)
+{
+	if (this->m_type == D3D12_COMMAND_LIST_TYPE_COPY)
+	{
+		if (this->m_computeCommandList)
+		{
+			this->m_computeCommandList =
+				this->m_renderDevice->GetQueue(D3D12_COMMAND_LIST_TYPE_COMPUTE)->GetCommandList();
+
+			this->m_computeCommandList->GenerateSpecularBrdfLut(specBrdfLutTexture);
+			return;
+		}
+	}
+
+	if (!this->m_generateSpecularBrdfLutPso)
+	{
+		this->m_generateSpecularBrdfLutPso = std::make_unique<GenerateSpecBrdfLutPso>(this->m_renderDevice);
+	}
+	auto specBrdfLutResource = specBrdfLutTexture.GetDx12Resource();
+	if (!specBrdfLutResource)
+	{
+		return;
+	}
+
+	CD3DX12_RESOURCE_DESC specBrdfLutDesc(specBrdfLutResource->GetDesc());
+
+	auto stagingResource = specBrdfLutResource;
+	Dx12Texture stagingTexture(this->m_renderDevice, stagingResource);
+
+	// If the passed-in resource does not allow for UAV access
+	// then create a staging resource that is used to generate
+	// the cubemap.
+	if ((specBrdfLutDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) == 0)
+	{
+		auto stagingDesc = specBrdfLutDesc;
+		stagingDesc.Format = Dx12Texture::GetUAVCompatableFormat(specBrdfLutDesc.Format);
+		stagingDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+		ThrowIfFailed(
+			this->m_renderDevice->GetD3DDevice()->CreateCommittedResource(
+				&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+				D3D12_HEAP_FLAG_NONE,
+				&stagingDesc,
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				nullptr,
+				IID_PPV_ARGS(&stagingResource)));
+
+		ResourceStateTracker::AddGlobalResourceState(stagingResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST);
+
+		SetD3DDebugName(stagingResource, L"Specular BRDF LUT Staging Texture");
+
+		stagingTexture.SetDx12Resource(stagingResource);
+		stagingTexture.CreateViews();
+
+		this->CopyResource(stagingTexture, specBrdfLutTexture);
+	}
+
+	this->TransitionBarrier(stagingTexture.GetDx12Resource(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+	this->m_commandList->SetPipelineState(this->m_cubemapToIrradianceMapPso->GetPipelineState().Get());
+	this->SetComputeRootSignature(this->m_cubemapToIrradianceMapPso->GetRootSignature());
+
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = Dx12Texture::GetUAVCompatableFormat(specBrdfLutDesc.Format);
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+	uavDesc.Texture2DArray.FirstArraySlice = 0;
+	uavDesc.Texture2DArray.ArraySize = 6;
+
+	this->SetUnorderedAccessView(
+		PanoToCubemapRS::DstMips, 0, stagingTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 0, 0, &uavDesc);
+
+	this->Dispatch(
+		Math::DivideByMultiple(static_cast<uint32_t>(specBrdfLutDesc.Width), 32),
+		Math::DivideByMultiple(static_cast<uint32_t>(specBrdfLutDesc.Height), 32),
+		6);
+
+	if (stagingResource != specBrdfLutResource)
+	{
+		this->CopyResource(specBrdfLutTexture, stagingTexture);
 	}
 }
 

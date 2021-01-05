@@ -34,6 +34,7 @@ namespace PbrRootParameters
         MaterialCB,
         LightPropertiesCB,
         PointLightsSB,
+        Textures,
         NumRootParameters,
     };
 }
@@ -122,7 +123,8 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreatePipelineStateObject(
         RootSignature const& rootSignature,
-        std::string const& shaderName);
+        std::string const& vertexShaderName,
+        std::string const& pixelShanderName);
 
 private:
     RenderTarget m_hdrRenderTarget;
@@ -143,6 +145,8 @@ private:
     std::unique_ptr<Dx12Texture> m_cathedralTexture = nullptr;
     std::unique_ptr<Dx12Texture> m_cathedralCubeMap = nullptr;
     std::unique_ptr<Dx12Texture> m_cathedralIrradianceMap = nullptr;
+    std::unique_ptr<Dx12Texture> m_cathedralSpecularMap = nullptr;
+    std::unique_ptr<Dx12Texture> m_specularBrdfLut = nullptr;
 
     PbrMaterial m_material = PbrMaterial({1.0f, 0.0f, 0.0f, 1.0f});
 
@@ -242,7 +246,22 @@ void BRDFLightingIBLApp::LoadContent()
 
         // Generate Irradiance map
         this->m_cathedralIrradianceMap = std::make_unique<Dx12Texture>(this->m_renderDevice, cubemapDesc);
-        uploadCmdList->PanoToCubemap(*this->m_cathedralIrradianceMap, *this->m_cathedralCubeMap);
+        uploadCmdList->GenerateIrradianceMap(*this->m_cathedralIrradianceMap, *this->m_cathedralCubeMap);
+
+        // this->m_cathedralSpecularMap = std::make_unique<Dx12Texture>(this->m_renderDevice, cubemapDesc);
+        // uploadCmdList->GenerateSpecularMap(*this->m_cathedralSpecularMap, *this->m_cathedralCubeMap);
+    }
+
+    {
+        // Create a cubemap for the HDR panorama.
+        CD3DX12_RESOURCE_DESC specularBrdfLut;
+        specularBrdfLut.Width = specularBrdfLut.Height = 256;
+        specularBrdfLut.DepthOrArraySize = 1;
+        specularBrdfLut.Format = DXGI_FORMAT_R16G16_FLOAT;
+        specularBrdfLut.MipLevels = 1;
+
+        this->m_specularBrdfLut= std::make_unique<Dx12Texture>(this->m_renderDevice, specularBrdfLut);
+        uploadCmdList->GenerateSpecularBrdfLut(*this->m_specularBrdfLut);
     }
 
     // Create an inverted (reverse winding order) cube so the insides are not clipped.
@@ -310,7 +329,7 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
             0,
             D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, &srvDesc);
 
-        this->m_skyboxMesh->Draw(*commandList);
+        // this->m_skyboxMesh->Draw(*commandList);
     }
 
     // -- Set pipeline state ---
@@ -342,6 +361,23 @@ void BRDFLightingIBLApp::RenderScene(Dx12Texture& sceneTexture)
 
     commandList->SetGraphicsDynamicStructuredBuffer(PbrRootParameters::PointLightsSB, this->m_pointLights);
 
+    /*
+    commandList->SetShaderResourceView(
+        PbrRootParameters::Textures,
+        0,
+        *this->m_cathedralSpecularMap,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        */
+    commandList->SetShaderResourceView(
+        PbrRootParameters::Textures,
+        0,
+        *this->m_cathedralIrradianceMap,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    commandList->SetShaderResourceView(
+        PbrRootParameters::Textures,
+        1,
+        *this->m_specularBrdfLut,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     // -- Draw Ambient Mesh ---
     this->m_sphereMesh->Draw(*commandList);
@@ -379,16 +415,36 @@ void BRDFLightingIBLApp::RenderUI()
 
 void BRDFLightingIBLApp::CreatePipelineStateObjects()
 {
+
+    CD3DX12_STATIC_SAMPLER_DESC linearClampSampler(
+        0,
+        D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+
     {
+        CD3DX12_DESCRIPTOR_RANGE1 descriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 1);
+
         CD3DX12_ROOT_PARAMETER1 rootParameters[PbrRootParameters::NumRootParameters];
         rootParameters[PbrRootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
         rootParameters[PbrRootParameters::CameraDataCB].InitAsConstants(sizeof(CameraData) / 4, 1, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
         rootParameters[PbrRootParameters::MaterialCB].InitAsConstantBufferView(2, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
         rootParameters[PbrRootParameters::LightPropertiesCB].InitAsConstants(sizeof(LightProperties) / 4, 3, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
         rootParameters[PbrRootParameters::PointLightsSB].InitAsShaderResourceView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);
+        rootParameters[PbrRootParameters::Textures].InitAsDescriptorTable(1, &descriptorRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
-        this->m_rootSignature = this->CreateRootSignature(PbrRootParameters::NumRootParameters, rootParameters);
-        this->m_lightModelPso = this->CreatePipelineStateObject(*this->m_rootSignature, "BRDFLighting");
+        CD3DX12_STATIC_SAMPLER_DESC spBRDF_SamplerDesc{ 1, D3D12_FILTER_MIN_MAG_MIP_LINEAR };
+        spBRDF_SamplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        spBRDF_SamplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        spBRDF_SamplerDesc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        CD3DX12_STATIC_SAMPLER_DESC staticSamplers[2];
+        staticSamplers[0] = linearClampSampler;
+        staticSamplers[1] = spBRDF_SamplerDesc;
+
+        this->m_rootSignature = this->CreateRootSignature(PbrRootParameters::NumRootParameters, rootParameters, 2, staticSamplers);
+        this->m_lightModelPso = this->CreatePipelineStateObject(*this->m_rootSignature, "BRDFLighting", "BRDFLightingIbl");
     }
 
     {
@@ -396,15 +452,8 @@ void BRDFLightingIBLApp::CreatePipelineStateObjects()
         CD3DX12_DESCRIPTOR_RANGE1 descriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
         CD3DX12_ROOT_PARAMETER1 rootParameters[SkyboxRootParammeters::NumRootParameters];
-        rootParameters[PbrRootParameters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
-        rootParameters[PbrRootParameters::CameraDataCB].InitAsDescriptorTable(1, &descriptorRange, D3D12_SHADER_VISIBILITY_PIXEL);
-
-        CD3DX12_STATIC_SAMPLER_DESC linearClampSampler(
-            0,
-            D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR,
-            D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-            D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
-            D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+        rootParameters[SkyboxRootParammeters::MatricesCB].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParameters[PbrRootParameters::Textures].InitAsDescriptorTable(1, &descriptorRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
         this->m_skyboxSignature = this->CreateRootSignature(
             SkyboxRootParammeters::NumRootParameters,
@@ -412,7 +461,7 @@ void BRDFLightingIBLApp::CreatePipelineStateObjects()
             1,
             &linearClampSampler);
 
-        this->m_skyboxPso = this->CreatePipelineStateObject(*this->m_skyboxSignature, "Skybox");
+        this->m_skyboxPso = this->CreatePipelineStateObject(*this->m_skyboxSignature, "Skybox", "Skybox");
     }
 }
 
@@ -453,7 +502,8 @@ std::unique_ptr<RootSignature> BRDFLightingIBLApp::CreateRootSignature(
 
 Microsoft::WRL::ComPtr<ID3D12PipelineState> BRDFLightingIBLApp::CreatePipelineStateObject(
     RootSignature const& rootSignature,
-    std::string const& shaderName)
+    std::string const& vertexShaderName,
+    std::string const& pixelShanderName)
 {
     // Setup the pipeline state.
     struct PipelineStateStream
@@ -470,12 +520,12 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> BRDFLightingIBLApp::CreatePipelineSt
 
     std::string baseAssetPath(fs::current_path().u8string());
     std::vector<char> vertexByteData;
-    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + shaderName + "VS.cso", vertexByteData);
+    bool success = BinaryReader::ReadFile(baseAssetPath + "\\" + vertexShaderName + "VS.cso", vertexByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Vertex Shader");
 
 
     std::vector<char> pixelByteData;
-    success = BinaryReader::ReadFile(baseAssetPath + "\\" + shaderName + "PS.cso", pixelByteData);
+    success = BinaryReader::ReadFile(baseAssetPath + "\\" + pixelShanderName + "PS.cso", pixelByteData);
     CORE_FATAL_ASSERT(success, "Failed to read Pixel Shader");
 
     pipelineStateStream.pRootSignature = rootSignature.GetRootSignature().Get();

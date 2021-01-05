@@ -33,7 +33,7 @@ RWTexture2DArray<float4> outputTexture : register(u0);
 // Linear repeat sampler.
 SamplerState LinearRepeatSampler : register(s0);
 
-#define GenerateMips_RootSignature \
+#define CubeMapToIrradiance_RootSignature \
     "RootFlags(0), " \
     "DescriptorTable( SRV(t0, numDescriptors = 1) )," \
     "DescriptorTable( UAV(u0, numDescriptors = 1) )," \
@@ -134,7 +134,7 @@ float3 tangentToWorld(const float3 v, const float3 N, const float3 S, const floa
     return S * v.x + T * v.y + N * v.z;
 }
 
-[RootSignature(GenerateMips_RootSignature)]
+[RootSignature(CubeMapToIrradiance_RootSignature)]
 [numthreads(BLOCK_SIZE, BLOCK_SIZE, 1)]
 void main(ComputeShaderInput input)
 {

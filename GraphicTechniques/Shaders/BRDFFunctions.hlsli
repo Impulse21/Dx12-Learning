@@ -44,8 +44,11 @@ float GeometrySchlickGGX(float NdotV, float k)
  *  L = Lighting
  *  k = Remmapped roughness(a) see above.
  */
-float GeometrySmith(float NdotV, float NdotL, float k)
+float GeometrySmith(float NdotV, float NdotL, float roughness)
 {
+    float r = roughness + 1.0f;
+    float k = (k * k) / 8.0f; // Epic suggests using this roughness remapping for analytic lights.
+    
     float ggx1 = GeometrySchlickGGX(NdotV, k);
     float ggx2 = GeometrySchlickGGX(NdotL, k);
     
@@ -60,11 +63,5 @@ float GeometrySmith(float NdotV, float NdotL, float k)
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
     return F0 + (1.0f - F0) * pow(1.0f - cosTheta, 5.0f);
-}
-
-float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
-{
-    float alpha = 1.0f - roughness;
-    return F0 + (max(float3(alpha, alpha, alpha), F0) - F0) * pow(max(1.0f - cosTheta, 0.0f), 5.0f);
 }
 #endif

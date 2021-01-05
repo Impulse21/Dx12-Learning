@@ -52,10 +52,28 @@ ConstantBuffer<LightProperties> LightProperticesCB: register(b3);
 
 StructuredBuffer<PointLight> PointLightsSB: register(t0);
 
-#ifdef ENABLE_IBL
-TextureCube irradianceMap : register(t1);
 
-SamplerState LinearRepeatSampler : register(s0);
+// TODO: IBL Define
+
+#ifdef ENABLE_IBL
+// TextureCube specularTexture : register(t1);
+TextureCube irradianceTexture : register(t1);
+Texture2D specularBRDFLUT : register(t2);
+
+SamplerState defaultSampler : register(s0);
+SamplerState spBRDF_Sampler : register(s1);
+#endif
+
+// Returns number of mipmap levels for specular IBL environment map.
+#ifdef ENABLE_IBL
+/*
+uint querySpecularTextureLevels()
+{
+    uint width, height, levels;
+    specularTexture.GetDimensions(0, width, height, levels);
+    return levels;
+}
+*/
 #endif
 
 // -- Pixel input Definition ---
@@ -78,11 +96,7 @@ float4 main(VSOutput input) : SV_TARGET
     float roughness = PbrMaterialCB.Roughness;
     float metalness = PbrMaterialCB.Metalness;
     float ao = PbrMaterialCB.AmbientOcclusion;
-    
-    // The K value for Schlick-GGX approximation of geometric attenuation function.
-    float r = roughness + 1.0f;
-    float k = (k * k) / 8.0f; // Epic suggests using this roughness remapping for analytic lights.
-    
+        
     float3 N = normalize(input.normalWS);
     float3 V = normalize(input.viewDirWS);
     float NdotV = saturate(dot(N, V));
@@ -91,6 +105,10 @@ float4 main(VSOutput input) : SV_TARGET
     //   - In PBR metalness workflows we make the simpligying assumption that most dielectric sufraces
     //     look visually correct with a constant 0.04.
     float3 F0 = lerp(Fdielectric, albedo, metalness);
+    
+    
+	// Specular reflection vector.
+    float3 Lr = 2.0 * NdotV * N - V;
     
     // Outgoing radiance calcuation for analytical lights
     float3 directLighting = float3(0.0f, 0.0f, 0.0f);
@@ -119,7 +137,7 @@ float4 main(VSOutput input) : SV_TARGET
         
         // Calculate Cooks tolerences terms
         float NDF = DistributionGGX(N, H, roughness);
-        float G = GeometrySmith(NdotV, NdotL, k);
+        float G = GeometrySmith(NdotV, NdotL, roughness);
         float3 F = FresnelSchlick(HdotV, F0);
         
 		// Diffuse scattering happens due to light being refracted multiple times by a dielectric medium.
@@ -141,7 +159,45 @@ float4 main(VSOutput input) : SV_TARGET
         directLighting += (diffuseBRDF + specualrBRDF) * radiance * NdotL;
     }
     
-    float3 ambientLighting = float3(0.03f, 0.03f, 0.03f) * albedo * ao;
+#ifdef ENABLE_IBL
+	// Ambient lighting (IBL).
+    float3 ambientLighting;
+	{
+		// Sample diffuse irradiance at normal direction.
+        float3 irradiance = irradianceTexture.Sample(defaultSampler, N).rgb;
+
+		// Calculate Fresnel term for ambient lighting.
+		// Since we use pre-filtered cubemap(s) and irradiance is coming from many directions
+		// use cosLo instead of angle with light's half-vector (cosLh above).
+		// See: https://seblagarde.wordpress.com/2011/08/17/hello-world/
+        float3 F = FresnelSchlick(NdotV, F0);
+
+		// Get diffuse contribution factor (as with direct lighting).
+        float3 kd = lerp(1.0 - F, 0.0, metalness);
+
+		// Irradiance map contains exitant radiance assuming Lambertian BRDF, no need to scale by 1/PI here either.
+        float3 diffuseIBL = kd * albedo * irradiance;
+
+		// Sample pre-filtered specular reflection environment at correct mipmap level.
+        // uint specularTextureLevels = querySpecularTextureLevels();
+        // float3 specularIrradiance = specularTexture.SampleLevel(defaultSampler, Lr, roughness * specularTextureLevels).rgb;
+
+		// Split-sum approximation factors for Cook-Torrance specular BRDF.
+        float2 specularBRDF = specularBRDFLUT.Sample(spBRDF_Sampler, float2(NdotV, roughness)).rg;
+
+		// Total specular IBL contribution.
+        float3 specularIBL = (F0 * specularBRDF.x + specularBRDF.y); // * specularIrradiance;
+
+		// Total ambient lighting contribution.
+        ambientLighting = diffuseIBL + specularIBL;
+    }
+    
+    #else
+    
+    float3 ambientLighting = float3(0.05f, 0.05f, 0.05f) * albedo * ao;
+    
+    #endif
+    
     return float4(directLighting + ambientLighting, 1.0f);
     
     // Apply tone mapping and gamma correction respecitly.
